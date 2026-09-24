@@ -1,0 +1,62 @@
+[
+  {
+    "id": "pin-4digit",
+    "password_hex": "31323334",
+    "salt_hex": "000102030405060708090a0b0c0d0e0f",
+    "timeCost": 3,
+    "memoryKib": 65536,
+    "parallelism": 1,
+    "outLen": 32,
+    "expected_hex": "25aff3856b38697ed256e1face06782e6b80c89602655565b6171a1f8122ba56"
+  },
+  {
+    "id": "pin-6digit",
+    "password_hex": "313233343536",
+    "salt_hex": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+    "timeCost": 3,
+    "memoryKib": 65536,
+    "parallelism": 1,
+    "outLen": 32,
+    "expected_hex": "481bda6e40e04cd11e4383557a6f442a2cf0e6984000dde853b5f94f1a4b7ad0"
+  },
+  {
+    "id": "password-unicode",
+    "password_hex": "61c3b1c3ab7362c3b6c3a772c3af66",
+    "salt_hex": "deadbeefdeadbeefdeadbeefdeadbeef",
+    "timeCost": 3,
+    "memoryKib": 65536,
+    "parallelism": 1,
+    "outLen": 32,
+    "expected_hex": "b8a73a93129abd96560a6f2050baafd2f6b7bf5071565581b1aa6754181ccf48"
+  },
+  {
+    "id": "allzero-salt",
+    "password_hex": "70617373776f7264",
+    "salt_hex": "0000000000000000000000000000000000000000000000000000000000000000",
+    "timeCost": 3,
+    "memoryKib": 65536,
+    "parallelism": 1,
+    "outLen": 32,
+    "expected_hex": "3b22574f683cc2f2fc3ef59c6c86342ad590e22d2f02f3f94d1bfe9a32e2aa04"
+  },
+  {
+    "id": "allff-salt",
+    "password_hex": "70617373776f7264",
+    "salt_hex": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+    "timeCost": 3,
+    "memoryKib": 65536,
+    "parallelism": 1,
+    "outLen": 32,
+    "expected_hex": "a8fb37744b290df7d1968788f2798111215177c161c404d62f532c3ac209537a"
+  },
+  {
+    "id": "16byte-salt",
+    "password_hex": "313233343536",
+    "salt_hex": "000102030405060708090a0b0c0d0e0f",
+    "timeCost": 3,
+    "memoryKib": 65536,
+    "parallelism": 1,
+    "outLen": 32,
+    "expected_hex": "9b0a9f24be07d83998f657d86a216621de37af21b9d3133fab03035e94fd58ec"
+  }
+]

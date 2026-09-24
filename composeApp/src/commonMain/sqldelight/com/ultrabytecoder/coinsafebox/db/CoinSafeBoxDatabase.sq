@@ -1,0 +1,173 @@
+CREATE TABLE wallets (
+    id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+    name TEXT NOT NULL,
+    master_seed BLOB NOT NULL,
+    mnemonic BLOB
+);
+
+selectAllWallets:
+SELECT * FROM wallets;
+
+selectWalletById:
+SELECT * FROM wallets WHERE id = ?;
+
+insertWallet:
+INSERT OR REPLACE INTO wallets(id, name, master_seed, mnemonic)
+VALUES (?, ?, ?, ?);
+
+lastInsertRowId:
+SELECT last_insert_rowid();
+
+deleteWalletById:
+DELETE FROM wallets WHERE id = ?;
+
+deleteAllWallets:
+DELETE FROM wallets;
+
+renameWallet:
+UPDATE wallets SET name = ? WHERE id = ?;
+
+updateMnemonic:
+UPDATE wallets SET mnemonic = ? WHERE id = ?;
+
+updateMasterSeed:
+UPDATE wallets SET master_seed = ? WHERE id = ?;
+
+CREATE TABLE accounts (
+    id TEXT PRIMARY KEY NOT NULL,
+    wallet_id INTEGER NOT NULL,
+    name TEXT NOT NULL,
+    amount TEXT NOT NULL,
+    type TEXT NOT NULL,
+    address TEXT,
+    account_index INTEGER,
+    derivation_path TEXT NOT NULL,
+    params TEXT,
+    symbol TEXT NOT NULL,
+    parent_account_id TEXT,
+    token_address TEXT,
+    FOREIGN KEY (wallet_id) REFERENCES wallets(id) ON DELETE CASCADE,
+    FOREIGN KEY (parent_account_id) REFERENCES accounts(id) ON DELETE CASCADE
+);
+
+CREATE INDEX idx_accounts_parent ON accounts(parent_account_id);
+
+selectAll:
+SELECT * FROM accounts;
+
+selectById:
+SELECT * FROM accounts WHERE id = ?;
+
+selectByWalletId:
+SELECT * FROM accounts WHERE wallet_id = ?;
+
+maxDerivationIndexByWalletAndAccountType:
+SELECT MAX(account_index) AS max_index FROM accounts WHERE wallet_id = ? AND type = ? AND parent_account_id IS NULL;
+
+selectNativeAccountsByWalletId:
+SELECT * FROM accounts WHERE wallet_id = ? AND parent_account_id IS NULL;
+
+selectNativeAccountsByWalletAndType:
+SELECT * FROM accounts WHERE wallet_id = ? AND type = ? AND parent_account_id IS NULL
+ORDER BY account_index ASC;
+
+selectTokensByParentId:
+SELECT * FROM accounts WHERE parent_account_id = ?;
+
+existsTokenForParent:
+SELECT EXISTS(SELECT 1 FROM accounts WHERE parent_account_id = ? AND token_address = ?);
+
+countTokensByParent:
+SELECT COUNT(*) AS cnt FROM accounts WHERE parent_account_id = ?;
+
+existsByDerivationPath:
+SELECT EXISTS(SELECT 1 FROM accounts WHERE wallet_id = ? AND derivation_path = ?);
+
+insert:
+INSERT OR REPLACE INTO accounts(id, wallet_id, name, amount, type, address, account_index, derivation_path, params, symbol, parent_account_id, token_address)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+
+updateAmount:
+UPDATE accounts SET amount = ? WHERE id = ?;
+
+updateParams:
+UPDATE accounts SET params = ? WHERE id = ?;
+
+deleteById:
+DELETE FROM accounts WHERE id = ?;
+
+deleteTokensByParentId:
+DELETE FROM accounts WHERE parent_account_id = ?;
+
+deleteAll:
+DELETE FROM accounts;
+
+deleteAccountsByWalletId:
+DELETE FROM accounts WHERE wallet_id = ?;
+
+CREATE TABLE utxos (
+    id              INTEGER PRIMARY KEY,
+    account_id      TEXT NOT NULL,
+    derivation_path TEXT NOT NULL,
+    amount          INTEGER NOT NULL,
+    txid            TEXT NOT NULL,
+    vout            INTEGER NOT NULL,
+    FOREIGN KEY (account_id) REFERENCES accounts(id) ON DELETE CASCADE
+);
+
+selectAllUtxos:
+SELECT * FROM utxos;
+
+selectUtxosByAccountId:
+SELECT * FROM utxos WHERE account_id = ?;
+
+selectUtxoById:
+SELECT * FROM utxos WHERE id = ?;
+
+insertUtxo:
+INSERT INTO utxos(account_id, derivation_path, amount, txid, vout)
+VALUES (?, ?, ?, ?, ?);
+
+deleteUtxoById:
+DELETE FROM utxos WHERE id = ?;
+
+deleteUtxosByAccountId:
+DELETE FROM utxos WHERE account_id = ?;
+
+CREATE TABLE transactions (
+    id TEXT PRIMARY KEY NOT NULL,
+    account_id TEXT NOT NULL,
+    tx_hash TEXT NOT NULL,
+    direction TEXT NOT NULL,
+    amount TEXT NOT NULL,
+    fee TEXT,
+    timestamp INTEGER NOT NULL,
+    status TEXT NOT NULL DEFAULT 'CONFIRMED',
+    counterparty_address TEXT,
+    block_height INTEGER,
+    chain_data TEXT,
+    FOREIGN KEY (account_id) REFERENCES accounts(id) ON DELETE CASCADE
+);
+
+CREATE UNIQUE INDEX idx_transactions_tx_hash_account_id ON transactions(tx_hash, account_id);
+
+CREATE INDEX idx_transactions_account_timestamp ON transactions(account_id, timestamp DESC);
+
+selectTransactionsByAccount:
+SELECT * FROM transactions
+WHERE account_id = ?
+ORDER BY timestamp DESC
+LIMIT ? OFFSET ?;
+
+selectTransactionCountByAccount:
+SELECT COUNT(*) AS total_count FROM transactions WHERE account_id = ?;
+
+upsertTransaction:
+INSERT OR REPLACE INTO transactions(id, account_id, tx_hash, direction, amount, fee, timestamp, status, counterparty_address, block_height, chain_data)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+
+deleteTransactionsByAccountId:
+DELETE FROM transactions WHERE account_id = ?;
+
+selectTransactionById:
+SELECT * FROM transactions WHERE id = ?;

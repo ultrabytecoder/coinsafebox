@@ -1,0 +1,32 @@
+TEAM_ID=
+
+PRODUCT_NAME=coinsafebox
+PRODUCT_BUNDLE_IDENTIFIER=com.ultrabytecoder.coinsafebox.coinsafebox$(TEAM_ID)
+
+CURRENT_PROJECT_VERSION=1
+MARKETING_VERSION=1.0
+
+// ---------------------------------------------------------------------------
+// Network selection (testnet / mainnet)
+//
+// COINSAFEBOX_NETWORK is injected into the app's Info.plist as "Network" (via
+// INFOPLIST_KEY_Network) and read by the KMP framework (MainViewController.kt)
+// to pick NetworkConfig.testnet() vs NetworkConfig.mainnet().
+//
+// Default is "testnet". The dedicated "Mainnet" Xcode build configuration
+// overrides this to "mainnet". The two network variants also get distinct
+// bundle identifiers (set per target config) so both can be installed side by side.
+// ---------------------------------------------------------------------------
+COINSAFEBOX_NETWORK = testnet
+INFOPLIST_KEY_Network = $(COINSAFEBOX_NETWORK)
+
+// ---------------------------------------------------------------------------
+// Etherscan API key (injected into Info.plist; plaintext in the .ipa, as before).
+// ETHERSCAN_API_KEY defaults to the testnet key; the "Mainnet" config overrides it
+// to the mainnet key. Fill in the two keys below (or in Xcode Build Settings) —
+// do NOT commit real key values.
+// ---------------------------------------------------------------------------
+ETHERSCAN_TESTNET_KEY =
+ETHERSCAN_MAINNET_KEY =
+ETHERSCAN_API_KEY = $(ETHERSCAN_TESTNET_KEY)
+INFOPLIST_KEY_EtherscanApiKey = $(ETHERSCAN_API_KEY)

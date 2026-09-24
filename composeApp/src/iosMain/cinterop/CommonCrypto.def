@@ -1,0 +1,3 @@
+headers = CommonCrypto/CommonCryptor.h
+headerFilter = CommonCrypto/*
+linkerOpts = -framework Security -framework Foundation

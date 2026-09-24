@@ -1,0 +1,4 @@
+package = libsodium
+headers = libsodium_wrapper.h
+headerFilter = sodium/*
+staticLibraries = libsodium

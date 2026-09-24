@@ -1,0 +1,257 @@
+package com.ultrabytecoder.coinsafebox.providers.ton.boc
+
+import com.ultrabytecoder.coinsafebox.providers.ton.address.TonAddress
+import kotlin.test.Test
+import kotlin.test.assertEquals
+
+class BitBuilderTest {
+
+    @Test
+    fun shouldSerializeUint() {
+        val cases = listOf(
+            listOf(10290L, 29, "00014194_"),
+            listOf(41732L, 27, "0014609_"),
+            listOf(62757L, 22, "03D496_"),
+            listOf(44525L, 16, "ADED"),
+            listOf(26925L, 30, "0001A4B6_"),
+            listOf(52948L, 27, "0019DA9_"),
+            listOf(12362L, 20, "0304A"),
+            listOf(31989L, 16, "7CF5"),
+            listOf(8503L, 21, "0109BC_"),
+            listOf(54308L, 17, "6A124_"),
+            listOf(61700L, 25, "0078824_"),
+            listOf(63112L, 20, "0F688"),
+            listOf(27062L, 29, "00034DB4_"),
+            listOf(37994L, 30, "000251AA_"),
+            listOf(47973L, 27, "00176CB_"),
+            listOf(18996L, 25, "00251A4_"),
+            listOf(34043L, 21, "0427DC_"),
+            listOf(8234L, 18, "080AA_"),
+            listOf(16218L, 26, "000FD6A_"),
+            listOf(40697L, 25, "004F7CC_"),
+            listOf(43740L, 27, "00155B9_"),
+            listOf(35773L, 31, "0001177B_"),
+            listOf(32916L, 18, "20252_"),
+            listOf(1779L, 24, "0006F3"),
+            listOf(35968L, 17, "46404_"),
+            listOf(15503L, 23, "00791F_"),
+            listOf(25860L, 21, "032824_"),
+            listOf(20651L, 29, "0002855C_"),
+            listOf(14369L, 16, "3821"),
+            listOf(28242L, 24, "006E52"),
+            listOf(28446L, 18, "1BC7A_"),
+            listOf(48685L, 16, "BE2D"),
+            listOf(54822L, 18, "3589A_"),
+            listOf(50042L, 22, "030DEA_"),
+            listOf(11024L, 30, "0000AC42_"),
+            listOf(44958L, 26, "002BE7A_"),
+            listOf(20297L, 27, "0009E93_"),
+            listOf(24757L, 16, "60B5"),
+            listOf(36043L, 29, "0004665C_"),
+            listOf(24210L, 16, "5E92"),
+            listOf(49621L, 29, "00060EAC_"),
+            listOf(63571L, 17, "7C29C_"),
+            listOf(16047L, 24, "003EAF"),
+            listOf(61384L, 27, "001DF91_"),
+            listOf(57607L, 25, "007083C_"),
+            listOf(32945L, 30, "000202C6_"),
+            listOf(31215L, 29, "0003CF7C_"),
+            listOf(3088L, 21, "006084_"),
+            listOf(45519L, 24, "00B1CF"),
+            listOf(53126L, 26, "0033E1A_")
+        )
+        for (c in cases) {
+            val builder = BitBuilder()
+            builder.writeUint(c[0] as Long, c[1] as Int)
+            val bits = builder.build()
+            assertEquals(c[2] as String, bits.toString(), "Uint(${c[0]}, ${c[1]})")
+        }
+    }
+
+    @Test
+    fun shouldSerializeInt() {
+        val cases = listOf(
+            listOf(-44028L, 22, "FD5012_"),
+            listOf(-1613L, 16, "F9B3"),
+            listOf(-3640L, 23, "FFE391_"),
+            listOf(45943L, 22, "02CDDE_"),
+            listOf(-25519L, 22, "FE7146_"),
+            listOf(-31775L, 31, "FFFF07C3_"),
+            listOf(3609L, 29, "000070CC_"),
+            listOf(-38203L, 20, "F6AC5"),
+            listOf(59963L, 28, "000EA3B"),
+            listOf(-22104L, 21, "FD4D44_"),
+            listOf(1305L, 21, "0028CC_"),
+            listOf(-40704L, 30, "FFFD8402_"),
+            listOf(39319L, 20, "09997"),
+            listOf(-39280L, 27, "FFECD21_"),
+            listOf(48805L, 21, "05F52C_"),
+            listOf(-47386L, 21, "FA3734_"),
+            listOf(-24541L, 22, "FE808E_"),
+            listOf(-11924L, 30, "FFFF45B2_"),
+            listOf(16173L, 22, "00FCB6_"),
+            listOf(25833L, 23, "00C9D3_"),
+            listOf(27830L, 22, "01B2DA_"),
+            listOf(50784L, 31, "00018CC1_"),
+            listOf(-41292L, 22, "FD7AD2_"),
+            listOf(-8437L, 20, "FDF0B"),
+            listOf(-42394L, 19, "EB4CD_"),
+            listOf(14663L, 26, "000E51E_"),
+            listOf(-52314L, 25, "FF99D34_"),
+            listOf(22649L, 31, "0000B0F3_"),
+            listOf(-60755L, 19, "E255B_"),
+            listOf(-28966L, 17, "C76D4_"),
+            listOf(44151L, 20, "0AC77"),
+            listOf(22112L, 26, "0015982_"),
+            listOf(25524L, 19, "0C769_"),
+            listOf(55597L, 23, "01B25B_"),
+            listOf(4434L, 28, "0001152"),
+            listOf(28364L, 29, "00037664_"),
+            listOf(-5431L, 25, "FFF564C_"),
+            listOf(35945L, 17, "4634C_"),
+            listOf(49508L, 19, "182C9_"),
+            listOf(-54454L, 30, "FFFCAD2A_"),
+            listOf(-62846L, 22, "FC2A0A_"),
+            listOf(-11725L, 28, "FFFD233"),
+            listOf(-25980L, 30, "FFFE6A12_"),
+            listOf(56226L, 30, "00036E8A_"),
+            listOf(64224L, 27, "001F5C1_"),
+            listOf(-52385L, 29, "FFF99AFC_"),
+            listOf(33146L, 24, "00817A"),
+            listOf(-4383L, 27, "FFFDDC3_"),
+            listOf(4617L, 23, "002413_"),
+            listOf(-20390L, 21, "FD82D4_")
+        )
+        for (c in cases) {
+            val builder = BitBuilder()
+            builder.writeInt(c[0] as Long, c[1] as Int)
+            val bits = builder.build()
+            assertEquals(c[2] as String, bits.toString(), "Int(${c[0]}, ${c[1]})")
+        }
+    }
+
+    @Test
+    fun shouldSerializeCoins() {
+        val cases = listOf(
+            187657898555727L to "6AAAC8261F94F",
+            220186135208421L to "6C842145FA1E5",
+            38303065322130L to "622D6209A3292",
+            99570315572129L to "65A8F054A33A1",
+            14785390105803L to "60D727DECD4CB",
+            244446854605494L to "6DE52B7EF6AB6",
+            130189848588337L to "676682FADB031",
+            82548661242881L to "64B13DBA14C01",
+            248198532456807L to "6E1BC395C6167",
+            192570661887521L to "6AF2459E55E21",
+            72100014883174L to "6419317C68166",
+            216482443674661L to "6C4E3BF27C425",
+            11259492167296L to "60A3D8E07EE80",
+            89891460221935L to "651C17C8E0BEF",
+            267747267722164L to "6F383C4C83BB4",
+            33545710125130L to "61E827822C04A",
+            48663481749259L to "62C42598B0F0B",
+            4122277458487L to "603BFCAE23237",
+            112985911164954L to "666C29519801A",
+            262936671139040L to "6EF23B6E1B4E0",
+            137598454214999L to "67D2522FC3157",
+            164191836706277L to "69554E41A15E5",
+            225097218341260L to "6CCB987BD398C",
+            253225616389304L to "6E64EAEE9B4B8",
+            89031277771089L to "650F935AF7951",
+            95175307882302L to "6568FBA6AEF3E",
+            129805848629999L to "6760EC77F52EF",
+            144714620593360L to "6839DFF8DE4D0",
+            245178977211193L to "6DEFD2DD7D339",
+            85630758278876L to "64DE176EDD6DC",
+            12826827848685L to "60BAA7A847BED",
+            112520990974580L to "6665655B26274",
+            279110697598724L to "6FDD985FBBF04",
+            213631116095525L to "6C24BDEC9B025",
+            151538088541111L to "689D2B5EFFBB7",
+            248258622846989L to "6E1CA3706F80D",
+            124738812119884L to "6717304960B4C",
+            20802268076562L to "612EB67CC9A12",
+            227545530657711L to "6CEF392866BAF",
+            120231499052120L to "66D5993CAB458",
+            149349897829611L to "687D53B9B7CEB",
+            189858289788838L to "6ACACD3EBA7A6",
+            123762285255173L to "6708FA70C9A05",
+            70958099290717L to "64089384D5A5D",
+            124643854909101L to "6715CE8B1FEAD",
+            7092186021168L to "60673473A7D30",
+            52349283250349L to "62F9C846EB0AD",
+            151939404432691L to "68A30263A8533",
+            31720663732116L to "61CD98AE4CF94",
+            132368134922315L to "678635BA9604B"
+        )
+        for ((value, expected) in cases) {
+            val builder = BitBuilder()
+            builder.writeCoins(value)
+            val bits = builder.build()
+            assertEquals(expected, bits.toString(), "Coins($value)")
+        }
+    }
+
+    @Test
+    fun shouldSerializeAddress() {
+        val cases = listOf(
+            "Ef89v3kFhPfyauFSn_PWq-F6HyiBSQDZRXjoDRWq5f5IZeTm" to "9FE7B7EF20B09EFE4D5C2A53FE7AD57C2F43E51029201B28AF1D01A2B55CBFC90CB_",
+            "Ef-zUJX6ySukm-41iSbHW5Ad788NYuWPYKzuAj4vLhe8WSgF" to "9FF66A12BF592574937DC6B124D8EB7203BDF9E1AC5CB1EC159DC047C5E5C2F78B3_",
+            "Ef-x95AVmzKUKkS7isd6XF7YqZf0R0JyOzBO7jir239_feMb" to "9FF63EF202B366528548977158EF4B8BDB1532FE88E84E476609DDC7157B6FEFEFB_",
+            "EQDA1y4uDTy1pdfReyOVD6WWGaAsD7CXg4SgltHS8NzITENs" to "80181AE5C5C1A796B4BAFA2F6472A1F4B2C3340581F612F0709412DA3A5E1B99099_",
+            "Ef-BsrQDp9XMxUjQW2lnRAdZFKKzBXmATqX57NPO5fjbbEkn" to "9FF036568074FAB998A91A0B6D2CE880EB22945660AF3009D4BF3D9A79DCBF1B6D9_",
+            "EQA4b5He6-GuoZqOmJzatkDPPtQGkYJTdvQ7XA-i4kAlYEHe" to "80070DF23BDD7C35D43351D3139B56C819E7DA80D2304A6EDE876B81F45C4804AC1_",
+            "EQDxN0lwwcuGE0oGyGyFljgzTczy_n0yo2Fj1J-1ag_pSu9y" to "801E26E92E183970C26940D90D90B2C70669B99E5FCFA6546C2C7A93F6AD41FD295_",
+            "Ef_Nmq7rexd9qNFbUPxdkl12cePfXWY92HXL2I6Xh6E-ijNC" to "9FF9B355DD6F62EFB51A2B6A1F8BB24BAECE3C7BEBACC7BB0EB97B11D2F0F427D15_",
+            "Ef_8vupFqox91LEUEjSNFEgHHcyW7-iN6cCQd9kakf_dzxB2" to "9FFF97DD48B5518FBA9622824691A28900E3B992DDFD11BD38120EFB23523FFBB9F_",
+            "Ef8hQISe1NQXMBaPlO_FAFkU2D1-oYOXAXVqfYSsxknuVJuM" to "9FE4281093DA9A82E602D1F29DF8A00B229B07AFD43072E02EAD4FB09598C93DCA9_",
+            "Ef9krxCf0_HV1pThV4WyjfYC3myZP-omgJzfoaMUK_fQqrKX" to "9FEC95E213FA7E3ABAD29C2AF0B651BEC05BCD9327FD44D0139BF43462857EFA155_",
+            "EQAi41iULCx-Hcx2hrV765AMPHkyJat8yPm1Xv8B5CJJ9a07" to "80045C6B1285858FC3B98ED0D6AF7D7201878F2644B56F991F36ABDFE03C84493EB_",
+            "EQAk5wMibfzAT8qvaLX8PzbizxfHCYKkbgw1NNpzbrG2vKJm" to "80049CE0644DBF9809F955ED16BF87E6DC59E2F8E130548DC186A69B4E6DD636D79_",
+            "Ef9316mrIrMHaMsqSxTHKmCsri2QfUGgjSoU1VQk9wRskj5s" to "9FEEFAF535645660ED1965496298E54C1595C5B20FA83411A5429AAA849EE08D925_",
+            "EQDu6rzgRXKvqpiTRFf2SvDkn9aQEquPooKfHwvVQtUJ2If3" to "801DDD579C08AE55F55312688AFEC95E1C93FAD2025571F45053E3E17AA85AA13B1_",
+            "Ef-XSsIAL-ln2ob2z8EYiPlxZsJXltjBLnhs0CHbr3Yey7GR" to "9FF2E9584005FD2CFB50DED9F823111F2E2CD84AF2DB1825CF0D9A043B75EEC3D97_",
+            "EQARe21rkGPjHKVkzDtjRo-AOKa5vOULjr3Yl6i8-D6hJs2Z" to "80022F6DAD720C7C6394AC99876C68D1F00714D7379CA171D7BB12F5179F07D424D_",
+            "Ef_fnsI3n6IBWCFBZS9svgj95Is69_P2a6k8QoNQT19RYqwX" to "9FFBF3D846F3F4402B04282CA5ED97C11FBC91675EFE7ECD752788506A09EBEA2C5_",
+            "EQA6MrDnm_MOscSlWQL4Bx_gYxF9_0bvCQSs4F1EL0lv54ru" to "800746561CF37E61D63894AB205F00E3FC0C622FBFE8DDE120959C0BA885E92DFCF_",
+            "EQD2LFXoHEGrBs284XDPYe8BZcVE1fJp5WrOiSnGM2_Dw5Tt" to "801EC58ABD03883560D9B79C2E19EC3DE02CB8A89ABE4D3CAD59D12538C66DF8787_",
+            "EQBQoXKqbC5JhOcM1i_xFHHJICdv6OUiI3YVfeo-IEAbapgf" to "800A142E554D85C9309CE19AC5FE228E392404EDFD1CA4446EC2AFBD47C408036D5_",
+            "Ef8d0NROO2-YRFbuZh-RnmrqyryQ1OtE-KyQQCh6zZWmB0qH" to "9FE3BA1A89C76DF3088ADDCCC3F233CD5D5957921A9D689F159208050F59B2B4C0F_",
+            "Ef8LGU633NWIL-h8kgESfHMMaRXRtKIm27opFoiXLSGn3aqH" to "9FE16329D6FB9AB105FD0F9240224F8E618D22BA369444DB774522D112E5A434FBB_",
+            "EQCu0fF1EQT0fCs73HLDyDYrRC4wEMN0J8AdsZy-yqBNeJ0H" to "8015DA3E2EA2209E8F85677B8E587906C56885C602186E84F803B63397D95409AF1_",
+            "Ef9DoPbfWEYzwQudnHROcLFsmuB1kez5SYYz_m6sQAeGEW6q" to "9FE8741EDBEB08C6782173B38E89CE162D935C0EB23D9F2930C67FCDD58800F0C23_",
+            "Ef_pRe-KC1renbNwq5JGHKKuvyKI1y0p_nY3j-Qs-kPkKEK-" to "9FFD28BDF1416B5BD3B66E157248C39455D7E4511AE5A53FCEC6F1FC859F487C851_",
+            "EQCSqDjtytyMrd4IChBaJ33mJXUWEjyn26rbSf21W_tiS-DG" to "801255071DB95B9195BBC101420B44EFBCC4AEA2C24794FB755B693FB6AB7F6C497_",
+            "Ef8Xu4ckjeYtb8xmZeolKZJt74gZMvA-fZKLoJen1CLTYdYJ" to "9FE2F770E491BCC5ADF98CCCBD44A5324DBDF103265E07CFB2517412F4FA845A6C3_",
+            "Ef986fds8KNgpb2p5OFwKI05kfqhxlYvbZYMKfKvASPNfEiN" to "9FEF9D3EED9E146C14B7B53C9C2E0511A7323F5438CAC5EDB2C1853E55E02479AF9_",
+            "EQAzICYYSfTBqnzhTEbbNcPdzPanjATBqQ9ZyYrINjMq91MA" to "80066404C3093E98354F9C2988DB66B87BB99ED4F180983521EB39315906C6655EF_",
+            "Ef881mEgtzPmq69RfYUV6e6OAsfMW2C3lD4bDyl2dHXvvARm" to "9FE79ACC2416E67CD575EA2FB0A2BD3DD1C058F98B6C16F287C361E52ECE8EBDF79_",
+            "EQBBh893C5iBTpdV1mHnvDLSlScISEw5PufX04I1MuCjTJ4L" to "800830F9EEE1731029D2EABACC3CF7865A52A4E109098727DCFAFA7046A65C14699_",
+            "EQB0uqivkAXQQ_kFqTB2L00zeyhHiQ2JkE-N6F69zNuz_phQ" to "800E975515F200BA087F20B5260EC5E9A66F6508F121B13209F1BD0BD7B99B767FD_",
+            "EQCOaaVT8TbdNRD0QwizJOkmrfDsGfaNxgpNdqGvxRNPHPQy" to "8011CD34AA7E26DBA6A21E886116649D24D5BE1D833ED1B8C149AED435F8A269E39_",
+            "Ef8mOjz9HcpkjurmigPyhwkN2nkNKUcWUuiBgQzxTj11Yi7r" to "9FE4C7479FA3B94C91DD5CD1407E50E121BB4F21A528E2CA5D1030219E29C7AEAC5_",
+            "Ef-rHHszbUfFU9IWiB5TSavxCVhMcbdR2uwKnEc9f77e9G_g" to "9FF5638F666DA8F8AA7A42D103CA69357E212B098E36EA3B5D815388E7AFF7DBDE9_",
+            "EQAgq38o4LAPwY5nBfKS34imEMBYIBQbdXjH5KknTlq5XENb" to "8004156FE51C1601F831CCE0BE525BF114C2180B0402836EAF18FC9524E9CB572B9_",
+            "EQAMyHiOpmQL8xc95ezg9mMWz358jGxczxEWt-Wk73g1touz" to "8001990F11D4CC817E62E7BCBD9C1ECC62D9EFCF918D8B99E222D6FCB49DEF06B6D_",
+            "Ef9ftKMdNNBM_y9qjJ7JEa3YsSPhrQ78OwlG1TmbOPOvbE7H" to "9FEBF69463A69A099FE5ED5193D92235BB16247C35A1DF876128DAA733671E75ED9_",
+            "EQAPjJNyikjoJBzmMzyz3YgQZKR0rbijFz2fbhPqNAJSmNpf" to "8001F1926E51491D04839CC667967BB1020C948E95B71462E7B3EDC27D46804A531_",
+            "Ef921sRNxiOT67NFtaP-QXzrTXbhTJbqPqqOBHNaTRbsFG5Q" to "9FEEDAD889B8C4727D7668B6B47FC82F9D69AEDC2992DD47D551C08E6B49A2DD829_",
+            "EQCkgMSMX2fKMnkhOIBR0R_dS6FAvb8-dqcTWxC5ahBcALBG" to "80149018918BECF9464F2427100A3A23FBA9742817B7E7CED4E26B62172D420B801_",
+            "Ef_dXppgl_ly8_gDcWzyoZH8m9La4oki4MPPmP60d6XRiQUv" to "9FFBABD34C12FF2E5E7F006E2D9E54323F937A5B5C51245C1879F31FD68EF4BA313_",
+            "Ef-15AOI3EB04jOnWO3B2U5hA93oSW9B6-JtwTVrQdkRDoCz" to "9FF6BC80711B880E9C4674EB1DB83B29CC207BBD092DE83D7C4DB826AD683B2221D_",
+            "EQAtFb5CFAVRLYCwsJquH14oc3nd5qxM7InWT4-hPIqRpXKa" to "8005A2B7C84280AA25B016161355C3EBC50E6F3BBCD5899D913AC9F1F427915234B_",
+            "Ef_l_SLp838E8C7buGVQW6L9y8DPq_Unj0JYx_gk7lqlSmzV" to "9FFCBFA45D3E6FE09E05DB770CAA0B745FB97819F57EA4F1E84B18FF049DCB54A95_",
+            "EQCQ8zlbwcqPmZroXqqUFUWCwa8iVAjfVl6bdrRp3Bm2r1G3" to "80121E672B783951F3335D0BD55282A8B05835E44A811BEACBD36ED68D3B8336D5F_",
+            "Ef_J98LIWrxKqDKUON1HLdempwpWK8dg0-tUtx2a7JlnD7tX" to "9FF93EF8590B5789550652871BA8E5BAF4D4E14AC578EC1A7D6A96E3B35D932CE1F_",
+            "Ef_FhvoBZDe1c9uARsVnhfxe0sbtpeBR5FdN4fRlMwPP2ZTW" to "9FF8B0DF402C86F6AE7B7008D8ACF0BF8BDA58DDB4BC0A3C8AE9BC3E8CA66079FB3_",
+            "EQDsbhBqKpU0YctnKpZzUBvMeMPRs3gJbuhCQ4jwnXFVdqLu" to "801D8DC20D4552A68C396CE552CE6A03798F187A366F012DDD0848711E13AE2AAED_"
+        )
+        for ((addressStr, expected) in cases) {
+            val address = TonAddress.parse(addressStr)
+            val builder = BitBuilder()
+            builder.writeAddress(address)
+            val bits = builder.build()
+            assertEquals(expected, bits.toString(), "Address($addressStr)")
+        }
+    }
+}
