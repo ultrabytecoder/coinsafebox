@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import com.ultrabytecoder.coinsafebox.domain.usecase.CreateWalletUseCase
 import com.ultrabytecoder.coinsafebox.security.EntropyCombiner
 import com.ultrabytecoder.coinsafebox.security.SecureMnemonicCode
+import com.ultrabytecoder.coinsafebox.security.SessionLockNotifier
 import com.ultrabytecoder.coinsafebox.security.gcHint
 import com.ultrabytecoder.coinsafebox.security.wipe
 import kotlinx.coroutines.CancellationException
@@ -20,7 +21,8 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
 class CreateWalletViewModel(
-    private val createWalletUseCase: CreateWalletUseCase
+    private val createWalletUseCase: CreateWalletUseCase,
+    private val draft: CreateWalletFlowDraft
 ) : ViewModel() {
 
     enum class Mode { GENERATE_NEW, RESTORE_EXISTING }
@@ -63,7 +65,7 @@ class CreateWalletViewModel(
 
     private var walletName: String = "My wallet"
 
-    // Secrets — all wiped in onCleared and after consumption.
+    // Secrets — all wiped on session lock, on clear (onCleared), and after consumption.
     private var passphrase: CharArray = CharArray(0)
     private var gestureDigest: ByteArray? = null
     private var generateJob: Job? = null
@@ -73,8 +75,39 @@ class CreateWalletViewModel(
     val useGestureEnabled: Boolean get() = _useGesture.value
     val walletNameValue: String get() = walletName
 
+    init {
+        if (draft.active) {
+            // Direct field assignment — bypasses setMode/setWordCount/setUseGesture
+            // (which call invalidateGenerated/wipe). Secrets are NOT restored; the
+            // user re-enters passphrase, re-draws gesture, and REVEAL regenerates
+            // from a fresh cycle.
+            _mode.value = draft.mode
+            _wordCount.value = draft.wordCount
+            _useGesture.value = draft.useGesture
+            walletName = draft.walletName
+            _step.value = draft.lastStep.resumeAfterLock()
+        }
+        // SESS-3: wipe secrets the moment the session locks, mirroring
+        // ExportMnemonicViewModel (SESS-3). onCleared() never runs for these
+        // remember-built VMs (see rememberDisposableViewModel in App.kt), so
+        // without this the passphrase/gesture/mnemonic buffers would linger in
+        // the dead instance until GC.
+        viewModelScope.launch {
+            SessionLockNotifier.locked.collect { wipeSecrets() }
+        }
+    }
+
+    // REVEAL -> PASSPHRASE because the generated mnemonic was wiped on lock;
+    // resuming at REVEAL would generate a different mnemonic and could
+    // contradict a backup the user already wrote down. All other steps
+    // resume as-is (GESTURE: user re-draws; PASSPHRASE: user re-enters;
+    // SETUP: prefill only).
+    private fun Step.resumeAfterLock(): Step =
+        if (this == Step.REVEAL) Step.PASSPHRASE else this
+
     fun setWalletName(name: String) {
         walletName = name
+        syncDraft()
     }
 
     fun setMode(newMode: Mode) {
@@ -89,6 +122,7 @@ class CreateWalletViewModel(
         gestureDigest?.wipe()
         gestureDigest = null
         invalidateGenerated()
+        syncDraft()
     }
 
     fun setWordCount(count: Int) {
@@ -98,6 +132,7 @@ class CreateWalletViewModel(
         if (count == _wordCount.value) return
         _wordCount.value = count
         invalidateGenerated()
+        syncDraft()
     }
 
     fun setUseGesture(use: Boolean) {
@@ -108,6 +143,7 @@ class CreateWalletViewModel(
             gestureDigest = null
         }
         invalidateGenerated()
+        syncDraft()
     }
 
     /**
@@ -151,14 +187,17 @@ class CreateWalletViewModel(
         if (_mode.value == Mode.GENERATE_NEW) {
             _step.value = if (_useGesture.value) Step.GESTURE else Step.PASSPHRASE
         }
+        syncDraft()
     }
 
     fun proceedFromPassphrase() {
         _step.value = Step.REVEAL
+        syncDraft()
     }
 
     fun proceedFromGesture() {
         _step.value = Step.PASSPHRASE
+        syncDraft()
     }
 
     fun back() {
@@ -168,6 +207,7 @@ class CreateWalletViewModel(
             Step.PASSPHRASE -> if (_useGesture.value) Step.GESTURE else Step.SETUP
             Step.REVEAL -> Step.PASSPHRASE
         }
+        syncDraft()
     }
 
     /**
@@ -232,6 +272,7 @@ class CreateWalletViewModel(
                         // (replay + buffer absorb it), so no NonCancellable
                         // wrapper is needed.
                         _walletCreated.tryEmit(result.walletId)
+                        draft.clear()
                     }
                     is Result.Error -> _createError.value = result.message
                 }
@@ -281,6 +322,7 @@ class CreateWalletViewModel(
                         // (replay + buffer absorb it), so no NonCancellable
                         // wrapper is needed.
                         _walletCreated.tryEmit(result.walletId)
+                        draft.clear()
                     }
                     is Result.Error -> {
                         // The generated mnemonic is no longer usable after a
@@ -315,13 +357,41 @@ class CreateWalletViewModel(
         _finalMnemonic.value = null
     }
 
-    override fun onCleared() {
-        super.onCleared()
+    /**
+     * Wipes all secret fields. Cancels the generate job FIRST (matching
+     * [onCleared]'s established order) to minimize the race where the
+     * Default-thread coroutine publishes a mnemonic between wipe calls.
+     *
+     * Public so the CreateWallet composable can call it from a
+     * DisposableEffect onDispose (mirroring ExportMnemonicScreen's dispose
+     * pattern) — deterministic cleanup even if the SESS-3 lock collector is
+     * cancelled before it fires.
+     */
+    fun wipeSecrets() {
         generateJob?.cancel()
+        generateJob = null
         passphrase.wipe()
+        passphrase = CharArray(0)
         gestureDigest?.wipe()
+        gestureDigest = null
         _finalMnemonic.value?.wipe()
         _finalMnemonic.value = null
         gcHint()
+    }
+
+    /**
+     * Single source of draft writes. Activates the draft on first call and
+     * always overwrites the non-secret fields + current step, so the draft
+     * mirrors the live state at every user-visible transition.
+     */
+    private fun syncDraft() {
+        if (!draft.active) draft.begin(_mode.value)
+        draft.updateSettings(_mode.value, _wordCount.value, _useGesture.value, walletName)
+        draft.recordStep(_step.value)
+    }
+
+    override fun onCleared() {
+        super.onCleared()
+        wipeSecrets()
     }
 }

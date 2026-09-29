@@ -26,6 +26,16 @@ fun QwertyLayout(
         modifier = modifier
     ) {
         KeyboardRow {
+            listOf('1', '2', '3', '4', '5', '6', '7', '8', '9', '0').forEach { char ->
+                KeyboardKey(
+                    label = char.toString(),
+                    onClick = { controller?.onKey(KeyCode.Digit(char)) },
+                    modifier = Modifier.weight(1f)
+                )
+            }
+        }
+
+        KeyboardRow {
             listOf('q', 'w', 'e', 'r', 't', 'y', 'u', 'i', 'o', 'p').forEach { char ->
                 val label = if (isShifted) char.uppercaseChar().toString() else char.toString()
                 KeyboardKey(

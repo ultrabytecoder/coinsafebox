@@ -44,6 +44,7 @@ import com.ultrabytecoder.coinsafebox.domain.usecase.SyncManager
 import com.ultrabytecoder.coinsafebox.ui.viewmodel.AccountsListViewModel
 import com.ultrabytecoder.coinsafebox.ui.viewmodel.CreateAccountViewModel
 import com.ultrabytecoder.coinsafebox.ui.viewmodel.AddTokenViewModel
+import com.ultrabytecoder.coinsafebox.ui.viewmodel.CreateWalletFlowDraft
 import com.ultrabytecoder.coinsafebox.ui.viewmodel.CreateWalletViewModel
 import com.ultrabytecoder.coinsafebox.ui.viewmodel.ExportMnemonicViewModel
 import com.ultrabytecoder.coinsafebox.ui.viewmodel.ManageWalletsViewModel
@@ -163,7 +164,21 @@ fun App() {
             }
             composable<Screen.CreateWallet> {
                 val createWallet: CreateWalletUseCase = koinInject()
-                val viewModel = rememberDisposableViewModel { CreateWalletViewModel(createWallet) }
+                val draft: CreateWalletFlowDraft = koinInject()
+                val viewModel = rememberDisposableViewModel {
+                    CreateWalletViewModel(createWallet, draft)
+                }
+
+                // Deterministic wipe at composable dispose: the SESS-3 lock
+                // collector (in the VM init) may be cancelled by
+                // viewModelScope.cancel() before it fires, so this
+                // DisposableEffect is the defense-in-depth backup. Mirrors
+                // ExportMnemonicScreen's onDispose -> clearSensitiveData().
+                DisposableEffect(viewModel) {
+                    onDispose {
+                        viewModel.wipeSecrets()
+                    }
+                }
 
                 CreateWalletFlow(
                     navController = navController,
