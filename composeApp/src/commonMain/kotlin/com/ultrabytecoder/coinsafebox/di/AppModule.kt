@@ -38,6 +38,7 @@ import com.ultrabytecoder.coinsafebox.domain.usecase.SyncUseCase
 import com.ultrabytecoder.coinsafebox.domain.usecase.VerifyPinUseCase
 import com.ultrabytecoder.coinsafebox.security.KeyManager
 import com.ultrabytecoder.coinsafebox.security.SessionManager
+import com.ultrabytecoder.coinsafebox.ui.viewmodel.CreateWalletFlowDraft
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -54,6 +55,10 @@ fun appModule(networkConfig: NetworkConfig) = module {
     single { SessionManager(platformDriverFactory(), get()) }
     single<DatabaseProvider> { get<SessionManager>() }
     single<SessionUnlocker> { get<SessionManager>() }
+
+    // App-scoped in-memory draft of non-secret create-wallet flow state,
+    // so an interrupted flow (session lock) can resume after re-auth.
+    single { CreateWalletFlowDraft() }
 
     single<AccountRepository> { com.ultrabytecoder.coinsafebox.data.AccountRepository(get()) }
     single<UtxoRepository> { com.ultrabytecoder.coinsafebox.data.UtxoRepository(get()) }
