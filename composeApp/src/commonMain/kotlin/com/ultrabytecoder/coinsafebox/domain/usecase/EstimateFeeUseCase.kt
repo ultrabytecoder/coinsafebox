@@ -2,11 +2,13 @@ package com.ultrabytecoder.coinsafebox.domain.usecase
 
 import com.ionspin.kotlin.bignum.decimal.BigDecimal
 import com.ultrabytecoder.coinsafebox.data.NetworkConfig
+import com.ultrabytecoder.coinsafebox.domain.model.AccountType
 import com.ultrabytecoder.coinsafebox.domain.model.FeeEstimation
 import com.ultrabytecoder.coinsafebox.domain.model.CustomFeeParams
 import com.ultrabytecoder.coinsafebox.domain.repository.AccountRepository
 import com.ultrabytecoder.coinsafebox.domain.repository.TransactionRepository
 import com.ultrabytecoder.coinsafebox.domain.repository.UtxoRepository
+import com.ultrabytecoder.coinsafebox.domain.repository.WalletRepository
 import com.ultrabytecoder.coinsafebox.domain.service.KeyProvider
 import com.ultrabytecoder.coinsafebox.providers.ProviderFactory
 import kotlin.time.Clock
@@ -18,7 +20,8 @@ class EstimateFeeUseCase(
     private val utxoRepository: UtxoRepository,
     private val transactionRepository: TransactionRepository,
     private val keyProvider: KeyProvider,
-    private val networkConfig: NetworkConfig
+    private val networkConfig: NetworkConfig,
+    private val walletRepository: WalletRepository
 ) {
     // Simple in-memory cache to prevent API spam when user is typing amounts
     private var cachedEstimation: FeeEstimation? = null
@@ -38,7 +41,7 @@ class EstimateFeeUseCase(
     ): FeeEstimation {
         val key = "$accountId|$amount|$recipientAddress|$feeParams"
         val now = Clock.System.now().toEpochMilliseconds()
-        
+
         // Return cached result if key matches and within TTL. The read is done
         // under the lock so concurrent invocations never see a torn cache state.
         val cached = cacheMutex.withLock {
@@ -49,14 +52,25 @@ class EstimateFeeUseCase(
         val account = accountRepository.getAccount(accountId)
             ?: throw IllegalArgumentException("Account not found: $accountId")
 
-        val estimation = keyProvider.withMasterSeed(account.walletId) { masterSeed ->
-            val provider = ProviderFactory.create(
-                account.type, masterSeed, utxoRepository, accountRepository,
+        val wallet = walletRepository.getWallet(account.walletId)
+            ?: throw IllegalArgumentException("Wallet not found: ${account.walletId}")
+        val estimation = if (wallet.isReadOnly) {
+            val xpub = if (account.type is AccountType.Btc) accountRepository.getXpub(account.id) else null
+            val provider = ProviderFactory.createReadOnly(
+                account.type, xpub, utxoRepository, accountRepository,
                 transactionRepository, networkConfig, account.params
             )
             provider.estimateFee(account.id, amount, recipientAddress, feeParams)
+        } else {
+            keyProvider.withMasterSeed(account.walletId) { masterSeed ->
+                val provider = ProviderFactory.create(
+                    account.type, masterSeed, utxoRepository, accountRepository,
+                    transactionRepository, networkConfig, account.params
+                )
+                provider.estimateFee(account.id, amount, recipientAddress, feeParams)
+            }
         }
-        
+
         // Update cache with new result. The write is done under the lock so the
         // three cache fields are committed atomically.
         cacheMutex.withLock {
@@ -64,7 +78,7 @@ class EstimateFeeUseCase(
             cacheKey = key
             cacheTimestamp = now
         }
-        
+
         return estimation
     }
 }

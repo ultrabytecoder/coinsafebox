@@ -12,6 +12,7 @@ import fr.acinq.bitcoin.Bitcoin
 import fr.acinq.bitcoin.ByteVector
 import fr.acinq.bitcoin.DeterministicWallet
 import fr.acinq.bitcoin.OutPoint
+import fr.acinq.bitcoin.PublicKey
 import fr.acinq.bitcoin.Script
 import fr.acinq.bitcoin.SigHash
 import fr.acinq.bitcoin.SigVersion
@@ -50,7 +51,8 @@ import kotlinx.serialization.json.longOrNull
 import kotlin.time.Clock
 
 class BtcProvider(
-    private val masterKey: DeterministicWallet.ExtendedPrivateKey,
+    private val masterKey: DeterministicWallet.ExtendedPrivateKey?,
+    private val accountXpub: DeterministicWallet.ExtendedPublicKey?,
     private val utxoRepository: UtxoRepository,
     private val accountRepository: AccountRepository,
     val params: JsonObject,
@@ -80,6 +82,12 @@ class BtcProvider(
         // Max BTC amount that fits in Long satoshi representation
         private val MAX_BTC_AMOUNT = BigDecimal.fromLong(Long.MAX_VALUE).divide(BigDecimal.fromLong(100_000_000))
     }
+
+    init {
+        require((masterKey != null) xor (accountXpub != null)) { "BtcProvider requires exactly one of masterKey or accountXpub" }
+    }
+
+    override val isReadOnly: Boolean get() = accountXpub != null
 
     private fun varIntSize(n: Int): Long = when {
         n < 253 -> 1L
@@ -136,31 +144,35 @@ class BtcProvider(
         }
     }
 
-    private fun deriveReceiveKeyFromPath(accountPath: String, addressIndex: Long): DeterministicWallet.ExtendedPrivateKey {
-        val segments = DerivationPathResolver.parsePath(accountPath).map { (index, hardened) ->
+    private fun derivePublicKeyFor(account: AccountInfo, chain: Int, addressIndex: Long): PublicKey {
+        val accountXpub = accountXpub
+        if (accountXpub != null) {
+            return accountXpub.derivePublicKey(listOf(chain.toLong(), addressIndex)).publicKey
+        }
+        val segments = DerivationPathResolver.parsePath(account.derivationPath).map { (index, hardened) ->
             if (hardened) DeterministicWallet.hardened(index) else index
         }
-        return masterKey.derivePrivateKey(segments + listOf(0L, addressIndex))
+        return masterKey!!.derivePrivateKey(segments + listOf(chain.toLong(), addressIndex)).publicKey
     }
 
     private fun deriveChangeKeyFromPath(accountPath: String, addressIndex: Long): DeterministicWallet.ExtendedPrivateKey {
         val segments = DerivationPathResolver.parsePath(accountPath).map { (index, hardened) ->
             if (hardened) DeterministicWallet.hardened(index) else index
         }
-        return masterKey.derivePrivateKey(segments + listOf(1L, addressIndex))
+        return masterKey!!.derivePrivateKey(segments + listOf(1L, addressIndex))
     }
 
     override suspend fun getAddress(accountId: String): String {
         val account = accountRepository.getAccount(accountId)
             ?: throw IllegalArgumentException("Account not found: $accountId")
         val addressIndex = params["current_receive_key_id"]?.jsonPrimitive?.long ?: 0L
-        val key = deriveReceiveKeyFromPath(account.derivationPath, addressIndex)
-        return Bitcoin.computeBIP84Address(key.publicKey, networkConfig.btcGenesisBlockHash)
+        val pub = derivePublicKeyFor(account, RECEIVE_CHAIN, addressIndex)
+        return Bitcoin.computeBIP84Address(pub, networkConfig.btcGenesisBlockHash)
     }
 
-    private fun resolveDeriveFunctions(account: AccountInfo): Pair<(Long) -> DeterministicWallet.ExtendedPrivateKey, (Long) -> DeterministicWallet.ExtendedPrivateKey> {
-        val receiveDeriver: (Long) -> DeterministicWallet.ExtendedPrivateKey = { addrIdx -> deriveReceiveKeyFromPath(account.derivationPath, addrIdx) }
-        val changeDeriver: (Long) -> DeterministicWallet.ExtendedPrivateKey = { addrIdx -> deriveChangeKeyFromPath(account.derivationPath, addrIdx) }
+    private fun resolveDeriveFunctions(account: AccountInfo): Pair<(Long) -> PublicKey, (Long) -> PublicKey> {
+        val receiveDeriver: (Long) -> PublicKey = { addrIdx -> derivePublicKeyFor(account, RECEIVE_CHAIN, addrIdx) }
+        val changeDeriver: (Long) -> PublicKey = { addrIdx -> derivePublicKeyFor(account, CHANGE_CHAIN, addrIdx) }
         return receiveDeriver to changeDeriver
     }
 
@@ -220,8 +232,8 @@ class BtcProvider(
         accountId: String,
         syncMode: SyncMode,
         client: HttpClient,
-        receiveDeriver: (Long) -> DeterministicWallet.ExtendedPrivateKey,
-        changeDeriver: (Long) -> DeterministicWallet.ExtendedPrivateKey
+        receiveDeriver: (Long) -> PublicKey,
+        changeDeriver: (Long) -> PublicKey
     ): List<TransactionInfo> {
         val receiveStartIndex = when (syncMode) {
             SyncMode.FULL -> 0L
@@ -249,15 +261,15 @@ class BtcProvider(
         client: HttpClient,
         chain: Int,
         startIndex: Long,
-        deriveKey: (Long) -> DeterministicWallet.ExtendedPrivateKey
+        deriveKey: (Long) -> PublicKey
     ): List<Pair<JsonObject, String>> {
         val results = mutableListOf<Pair<JsonObject, String>>()
         var consecutiveEmpty = 0
         var addressIndex = startIndex
 
         while (consecutiveEmpty < GAP_LIMIT) {
-            val key = deriveKey(addressIndex)
-            val address = Bitcoin.computeBIP84Address(key.publicKey, networkConfig.btcGenesisBlockHash)
+            val pub = deriveKey(addressIndex)
+            val address = Bitcoin.computeBIP84Address(pub, networkConfig.btcGenesisBlockHash)
 
             val txs = fetchAddressTransactions(client, address)
             if (txs.isEmpty()) {
@@ -394,7 +406,7 @@ class BtcProvider(
         chain: Int,
         derivationIndex: Long,
         startIndex: Long,
-        deriveKey: (Long) -> DeterministicWallet.ExtendedPrivateKey
+        deriveKey: (Long) -> PublicKey
     ): Long? {
         val existingUtxos = utxoRepository.getUtxosByAccount(accountId)
         val existingTxids = existingUtxos.map { "${it.txid}:${it.vout}" }.toSet()
@@ -405,8 +417,8 @@ class BtcProvider(
         var highestUsedIndex: Long? = null  // highestUsedIndex is null means "no UTXOs found on this chain"
 
         while (consecutiveEmpty < GAP_LIMIT) {
-            val key = deriveKey(addressIndex)
-            val address = Bitcoin.computeBIP84Address(key.publicKey, networkConfig.btcGenesisBlockHash)
+            val pub = deriveKey(addressIndex)
+            val address = Bitcoin.computeBIP84Address(pub, networkConfig.btcGenesisBlockHash)
             val derivationPath = "m/84'/${networkConfig.btcBip84CoinType}'/$derivationIndex'/$chain/$addressIndex"
 
             // An address counts as "used" if it has ANY transaction history (chain
@@ -517,14 +529,14 @@ class BtcProvider(
         for (utxo in sorted) {
             selected.add(utxo)
             sum += utxo.amount
-            
+
             // Calculate potential change to determine numOutputs
             val estimatedFeeMax = estimateVSize(selected.size, 2) * feeRate
             val tempChange = sum - requiredAmount - estimatedFeeMax
 
             val numOutputs = if (tempChange >= DUST_THRESHOLD_SAT) 2 else 1
             val estimatedFeeActual = estimateVSize(selected.size, numOutputs) * feeRate
-            
+
             if (sum >= requiredAmount + estimatedFeeActual) {
                 return selected
             }
@@ -552,6 +564,7 @@ class BtcProvider(
         accountId: String,
         feeParams: CustomFeeParams? = null
     ): Triple<String, List<Long>, Boolean> {
+        if (isReadOnly) throw ReadOnlyException()
         if (amount > MAX_BTC_AMOUNT) {
             throw IllegalArgumentException("Amount exceeds maximum representable BTC value")
         }
@@ -569,7 +582,7 @@ class BtcProvider(
         val tempChange = selectedUtxos.sumOf { it.amount } - destAmountSat - estimatedFeeMax
         val numOutputs = if (tempChange >= DUST_THRESHOLD_SAT) 2 else 1
         val feeSat = estimateVSize(selectedUtxos.size, numOutputs) * feeRate
-        
+
         val inputsSum = selectedUtxos.sumOf { it.amount }
         val changeAmount = inputsSum - destAmountSat - feeSat
 
@@ -657,7 +670,7 @@ class BtcProvider(
         val numOutputs = if (tempChange >= DUST_THRESHOLD_SAT) 2 else 1
         val feeSat = estimateVSize(selected.size, numOutputs) * feeRate
         val totalCost = BigDecimal.fromLong(feeSat).divide(BigDecimal.fromLong(100_000_000))
-        
+
         return FeeEstimation(totalCost, CustomFeeParams.Btc(feeRate))
     }
 
@@ -667,6 +680,7 @@ class BtcProvider(
         accountId: String,
         feeParams: CustomFeeParams?
     ): String {
+        if (isReadOnly) throw ReadOnlyException()
         return buildSignedTransaction(address, amount, accountId, feeParams).first
     }
 
@@ -751,7 +765,7 @@ class BtcProvider(
         val segments = parsed.map { (idx, hardened) ->
             if (hardened) DeterministicWallet.hardened(idx) else idx
         }
-        return masterKey.derivePrivateKey(segments)
+        return masterKey!!.derivePrivateKey(segments)
     }
 }
 

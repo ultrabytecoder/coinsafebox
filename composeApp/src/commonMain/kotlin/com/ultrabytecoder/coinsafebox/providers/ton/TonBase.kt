@@ -29,7 +29,7 @@ enum class TonWalletVersion {
 }
 
 abstract class TonBase(
-    protected val masterSeed: ByteArray,
+    protected val masterSeed: ByteArray?,
     protected val networkConfig: NetworkConfig
 ) {
     companion object {
@@ -67,7 +67,7 @@ abstract class TonBase(
     data class Ed25519KeyPair(val privateKey: Ed25519PrivateKey, val publicKey: ByteArray, val privateKeySeed: ByteArray)
 
     protected fun deriveTonKey(index: Long): Ed25519KeyPair {
-        val master = hmacSha512("ed25519 seed".toByteArray(), masterSeed)
+        val master = hmacSha512("ed25519 seed".toByteArray(), masterSeed!!)
         val key = deriveSlip10Path(master, listOf(
             hardenedIdx(44),
             hardenedIdx(TON_COIN_TYPE),
@@ -88,7 +88,7 @@ abstract class TonBase(
         val slip10Indices = segments.map { (index, _) ->
             hardenedIdx(index.toInt())
         }
-        val master = hmacSha512("ed25519 seed".toByteArray(), masterSeed)
+        val master = hmacSha512("ed25519 seed".toByteArray(), masterSeed!!)
         val key = deriveSlip10Path(master, slip10Indices)
         val privateKeySeed = key.copyOfRange(0, 32)
         val privateKey = Ed25519.keyFromSeed(privateKeySeed)

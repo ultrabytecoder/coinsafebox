@@ -29,6 +29,7 @@ import com.ultrabytecoder.coinsafebox.domain.usecase.GetMnemonicUseCase
 import com.ultrabytecoder.coinsafebox.domain.usecase.DeleteWalletUseCase
 import com.ultrabytecoder.coinsafebox.domain.usecase.RenameWalletUseCase
 import com.ultrabytecoder.coinsafebox.domain.usecase.SendUseCase
+import com.ultrabytecoder.coinsafebox.domain.usecase.RemoveMasterKeyUseCase
 import com.ultrabytecoder.coinsafebox.domain.usecase.GetSecurityMethodUseCase
 import com.ultrabytecoder.coinsafebox.domain.usecase.SetSecurityMethodUseCase
 import com.ultrabytecoder.coinsafebox.domain.usecase.SetupPinUseCase
@@ -69,18 +70,19 @@ fun appModule(networkConfig: NetworkConfig) = module {
     factory { CreateWalletUseCase(get()) }
     factory { GetMnemonicUseCase(get()) }
     factory { GetAccountsUseCase(get()) }
-    factory { CreateAccountUseCase(get(), get()) }
+    factory { CreateAccountUseCase(get(), get(), get()) }
     factory { AddTokenUseCase(get()) }
     factory { CreateTokenUseCase(get(), get(), get()) }
-    factory { EstimateFeeUseCase(get(), get(), get(), get(), get()) }
-    factory { SendUseCase(get(), get(), get(), get(), get()) }
-    factory { GetAccountAddressUseCase(get(), get(), get(), get(), get()) }
+    factory { EstimateFeeUseCase(get(), get(), get(), get(), get(), get()) }
+    factory { SendUseCase(get(), get(), get(), get(), get(), get()) }
+    factory { GetAccountAddressUseCase(get(), get(), get(), get(), get(), get()) }
     factory { GetWalletsUseCase(get()) }
     factory { DeleteWalletUseCase(get(), get(), get(), get()) }
     factory { RenameWalletUseCase(get()) }
+    factory { RemoveMasterKeyUseCase(get(), get(), get(), get(), get(), get()) }
     single { SyncManager() }
-    factory { SyncUseCase(get(), get(), get(), get(), get(), get()) }
-    factory { SyncAccountUseCase(get(), get(), get(), get(), get(), get()) }
+    factory { SyncUseCase(get(), get(), get(), get(), get(), get(), get()) }
+    factory { SyncAccountUseCase(get(), get(), get(), get(), get(), get(), get()) }
 
     single<PinRepository> { PinRepositoryImpl(get(), get(), get(), get()) }
     factory { CheckPinStatusUseCase(get()) }

@@ -30,7 +30,7 @@ object ProviderFactory {
         val masterKey = DeterministicWallet.generate(masterSeed)
         return when (type) {
             is AccountType.Btc -> BtcProvider(
-                masterKey, utxoRepository, accountRepository, parsedParams, networkConfig,
+                masterKey, null, utxoRepository, accountRepository, parsedParams, networkConfig,
                 transactionRepository = transactionRepository,
                 createClient = { HttpClient() }
             )
@@ -53,6 +53,48 @@ object ProviderFactory {
             )
             // TODO: implement TonTokenProvider when Jetton support is added
             is AccountType.TonToken -> TonProvider(masterSeed, accountRepository, parsedParams, networkConfig, transactionRepository = transactionRepository)
+        }
+    }
+
+    suspend fun createReadOnly(
+        type: AccountType,
+        xpub: String?,
+        utxoRepository: UtxoRepository,
+        accountRepository: AccountRepository,
+        transactionRepository: TransactionRepository,
+        networkConfig: NetworkConfig,
+        params: String? = null
+    ): Provider {
+        val parsedParams = params?.let { json.parseToJsonElement(it).jsonObject } ?: JsonObject(emptyMap())
+        return when (type) {
+            is AccountType.Btc -> {
+                val accountXpub = xpub?.let { BtcXpub.decode(it) }
+                    ?: throw IllegalArgumentException("BTC read-only provider requires an xpub")
+                BtcProvider(
+                    null, accountXpub, utxoRepository, accountRepository, parsedParams, networkConfig,
+                    transactionRepository = transactionRepository,
+                    createClient = { HttpClient() }
+                )
+            }
+            is AccountType.Eth -> EthProvider(
+                null, accountRepository, parsedParams, networkConfig,
+                transactionRepository = transactionRepository
+            )
+            is AccountType.Trx -> TrxProvider(null, accountRepository, parsedParams, networkConfig, transactionRepository = transactionRepository)
+            is AccountType.Ton -> TonProvider(null, accountRepository, parsedParams, networkConfig, transactionRepository = transactionRepository)
+            is AccountType.Erc20 -> Erc20TokenProvider(
+                null, accountRepository, parsedParams, networkConfig,
+                transactionRepository = transactionRepository
+            )
+            is AccountType.Trc20 -> Trc20TokenProvider(
+                null,
+                accountRepository,
+                parsedParams,
+                networkConfig,
+                transactionRepository = transactionRepository
+            )
+            // TODO: implement TonTokenProvider when Jetton support is added
+            is AccountType.TonToken -> TonProvider(null, accountRepository, parsedParams, networkConfig, transactionRepository = transactionRepository)
         }
     }
 }

@@ -70,6 +70,7 @@ class CreateWalletViewModelTest {
         var lastInsertedName: String? = null
         var lastInsertedMasterSeed: ByteArray? = null
         var lastInsertedMnemonic: ByteArray? = null
+        var lastInsertedHasPassphrase: Boolean? = null
         var throwOnInsert: Throwable? = null
 
         override fun getWalletsFlow(): Flow<List<WalletInfo>> = flowOf(emptyList())
@@ -78,12 +79,14 @@ class CreateWalletViewModelTest {
         override suspend fun insertWallet(
             name: String,
             masterSeed: ByteArray,
-            mnemonic: ByteArray?
+            mnemonic: ByteArray?,
+            hasPassphrase: Boolean
         ): Long {
             insertCallCount++
             lastInsertedName = name
             lastInsertedMasterSeed = masterSeed
             lastInsertedMnemonic = mnemonic
+            lastInsertedHasPassphrase = hasPassphrase
             throwOnInsert?.let { throw it }
             return 42L
         }
@@ -91,6 +94,8 @@ class CreateWalletViewModelTest {
         override suspend fun deleteWallet(id: Long) {}
         override suspend fun getStoredMnemonic(id: Long): ByteArray? = null
         override suspend fun renameWallet(id: Long, name: String) {}
+        override suspend fun clearMasterKey(id: Long) {}
+        override suspend fun restoreMasterKey(id: Long, masterSeed: ByteArray, mnemonic: ByteArray?) {}
     }
 
     @BeforeTest

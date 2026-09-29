@@ -35,6 +35,7 @@ import androidx.navigation.NavController
 import com.ultrabytecoder.coinsafebox.domain.model.AccountGroup
 import com.ultrabytecoder.coinsafebox.domain.model.AccountInfo
 import com.ultrabytecoder.coinsafebox.domain.model.AccountType
+import com.ultrabytecoder.coinsafebox.ui.components.ReadOnlyBadge
 import com.ultrabytecoder.coinsafebox.ui.theme.AuroraPrimary
 import compose.icons.FeatherIcons
 import compose.icons.feathericons.*
@@ -91,6 +92,10 @@ fun AccountsListScreen(
                                 style = MaterialTheme.typography.titleLarge,
                                 fontWeight = FontWeight.Bold
                             )
+                            if (selectedWallet?.isReadOnly == true) {
+                                Spacer(modifier = Modifier.width(8.dp))
+                                ReadOnlyBadge()
+                            }
                             Icon(
                                 FeatherIcons.ChevronDown,
                                 contentDescription = "Select wallet",

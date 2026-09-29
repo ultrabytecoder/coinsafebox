@@ -20,6 +20,11 @@ interface AccountRepository {
     suspend fun deleteAccount(id: String)
     suspend fun deleteAccountsByWallet(walletId: Long)
 
+    /** Account-level xpub (BTC public key); public data, read only by the provider. */
+    suspend fun getXpub(id: String): String?
+    suspend fun updateXpub(id: String, xpub: String)
+    suspend fun updateAddress(id: String, address: String)
+
     /**
      * Returns native accounts of the given [type] (e.g. "ETH", "TRX")
      * for the given [walletId], as a one-shot snapshot sorted by accountIndex.

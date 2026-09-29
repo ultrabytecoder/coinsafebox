@@ -8,6 +8,8 @@ import com.ultrabytecoder.coinsafebox.domain.model.FeePresets
 enum class SyncMode { FULL, NORMAL }
 
 interface Provider {
+    val isReadOnly: Boolean get() = false
+
     suspend fun getAddress(accountId: String): String
     suspend fun createTransaction(
         address: String,
@@ -27,3 +29,5 @@ interface Provider {
     ): FeeEstimation
     suspend fun feePresets(accountId: String): FeePresets?
 }
+
+class ReadOnlyException(message: String = "This account is read-only") : Exception(message)

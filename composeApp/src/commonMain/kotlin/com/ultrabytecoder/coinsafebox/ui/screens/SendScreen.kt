@@ -35,6 +35,7 @@ import com.ultrabytecoder.coinsafebox.ui.keyboard.state.LocalKeyboardController
 import com.ultrabytecoder.coinsafebox.ui.keyboard.state.MutableStateTarget
 import com.ultrabytecoder.coinsafebox.ui.keyboard.state.rememberKeyboardController
 import com.ultrabytecoder.coinsafebox.ui.viewmodel.FeeSelectionMode
+import com.ultrabytecoder.coinsafebox.ui.viewmodel.SendPhase
 import com.ultrabytecoder.coinsafebox.ui.viewmodel.SendViewModel
 
 /**
@@ -66,9 +67,13 @@ fun SendScreen(
     val customEthMaxFee by viewModel.customEthMaxFee.collectAsState()
     val customTrc20FeeLimit by viewModel.customTrc20FeeLimit.collectAsState()
     val validationError by viewModel.validationError.collectAsState()
+    val phase by viewModel.phase.collectAsState()
+    val hasPassphrase by viewModel.hasPassphrase.collectAsState()
+    val sendError by viewModel.sendError.collectAsState()
+    val sendResult by viewModel.sendResult.collectAsState()
     var address by remember { mutableStateOf("") }
     var amount by remember { mutableStateOf("") }
-    var isLoading by remember { mutableStateOf(false) }
+    val signing = phase == SendPhase.SIGNING
     var btcFeeText by remember { mutableStateOf(customBtcFeeRate.toString()) }
     var ethPriorityText by remember { mutableStateOf(formatGwei(customEthPriorityFee)) }
     var ethMaxFeeText by remember { mutableStateOf(formatGwei(customEthMaxFee)) }
@@ -111,6 +116,18 @@ fun SendScreen(
             setter = { trc20FeeText = it; viewModel.setCustomTrc20FeeLimit(it.toLongOrNull() ?: 0L) }
         )
     }
+    val mnemonicTarget = remember {
+        MutableStateTarget(
+            getter = { viewModel.mnemonicField.text },
+            setter = { viewModel.mnemonicField.update(it) }
+        )
+    }
+    val passphraseTarget = remember {
+        MutableStateTarget(
+            getter = { viewModel.passphraseField.text },
+            setter = { viewModel.passphraseField.update(it) }
+        )
+    }
     val keyboardController = rememberKeyboardController()
 
     // Sync local UI text fields whenever the ViewModel custom flows update
@@ -151,6 +168,22 @@ fun SendScreen(
 
     // Re-read the fiat currency selection when (re)entering the screen.
     LaunchedEffect(Unit) { viewModel.refreshFiatCurrency() }
+
+    // Navigate once a send (full or read-only) has succeeded.
+    LaunchedEffect(sendResult) {
+        val txid = sendResult
+        if (txid != null) {
+            viewModel.onSendResultConsumed()
+            navController.navigate(Screen.TransactionSent(txid)) {
+                popUpTo(Screen.AccountsList::class) { inclusive = false }
+            }
+        }
+    }
+
+    // Deterministic wipe of the mnemonic/passphrase buffers when leaving the screen.
+    DisposableEffect(Unit) {
+        onDispose { viewModel.clearSensitiveData() }
+    }
 
     LaunchedEffect(amount, address, selectedFeeMode, btcFeeText, ethPriorityText, ethMaxFeeText, trc20FeeText) {
         if (amount.isNotBlank()) {
@@ -195,7 +228,10 @@ fun SendScreen(
                 TopAppBar(
                     title = { Text("Send") },
                     navigationIcon = {
-                        IconButton(onClick = { navController.popBackStack() }) {
+                        IconButton(onClick = {
+                            if (phase == SendPhase.MNEMONIC_PROMPT) viewModel.cancelMnemonicPrompt()
+                            else navController.popBackStack()
+                        }) {
                             Icon(FeatherIcons.ArrowLeft, contentDescription = "Back")
                         }
                     },
@@ -217,6 +253,16 @@ fun SendScreen(
                         .padding(16.dp),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
+                    if (phase == SendPhase.MNEMONIC_PROMPT) {
+                        MnemonicSendPromptCard(
+                            mnemonicTarget = mnemonicTarget,
+                            showPassphrase = hasPassphrase,
+                            passphraseTarget = passphraseTarget,
+                            errorText = sendError,
+                            onSignAndSend = { viewModel.confirmSend() },
+                            onCancel = { viewModel.cancelMnemonicPrompt() }
+                        )
+                    } else {
                     Card(
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(20.dp),
@@ -403,57 +449,77 @@ fun SendScreen(
                             style = MaterialTheme.typography.bodySmall
                         )
                     }
+                    }
                 }
 
-                // Send button pinned at bottom
+                // Send / mnemonic controls pinned at bottom
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(16.dp)
                 ) {
-                    Button(
-                        onClick = {
-                            if (address.isNotBlank() && amount.isNotBlank()) {
-                                // Validate custom fee before sending
-                                if (selectedFeeMode is FeeSelectionMode.Custom && !viewModel.validateCustomFee()) {
-                                    scope.launch {
-                                        snackbarHostState.showSnackbar("Please fix fee values")
-                                    }
-                                    return@Button
-                                }
-                                isLoading = true
-                                scope.launch {
-                                    try {
-                                        val txid = viewModel.sendTransaction(address, BigDecimal.parseString(amount))
-                                        isLoading = false
-                                        navController.navigate(Screen.TransactionSent(txid)) {
-                                            popUpTo(Screen.AccountsList::class) { inclusive = false }
-                                        }
-                                    } catch (e: kotlinx.coroutines.CancellationException) {
-                                        throw e
-                                    } catch (e: Exception) {
-                                        isLoading = false
-                                        snackbarHostState.showSnackbar("Failed: ${e.message}")
-                                    }
-                                }
-                            } else {
-                                scope.launch {
-                                    snackbarHostState.showSnackbar("Please fill in all fields")
+                    if (phase == SendPhase.MNEMONIC_PROMPT) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            OutlinedButton(
+                                onClick = { viewModel.cancelMnemonicPrompt() },
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .height(56.dp),
+                                enabled = !signing
+                            ) {
+                                Text("Cancel")
+                            }
+                            Button(
+                                onClick = { viewModel.confirmSend() },
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .height(56.dp),
+                                enabled = !signing
+                            ) {
+                                if (signing) {
+                                    CircularProgressIndicator(
+                                        modifier = Modifier.size(24.dp),
+                                        color = MaterialTheme.colorScheme.onPrimary
+                                    )
+                                } else {
+                                    Text("Sign & Send")
                                 }
                             }
-                        },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(56.dp),
-                        enabled = !isLoading
-                    ) {
-                        if (isLoading) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(24.dp),
-                                color = MaterialTheme.colorScheme.onPrimary
-                            )
-                        } else {
-                            Text("Send")
+                        }
+                    } else {
+                        Button(
+                            onClick = {
+                                if (address.isNotBlank() && amount.isNotBlank()) {
+                                    // Validate custom fee before sending
+                                    if (selectedFeeMode is FeeSelectionMode.Custom && !viewModel.validateCustomFee()) {
+                                        scope.launch {
+                                            snackbarHostState.showSnackbar("Please fix fee values")
+                                        }
+                                        return@Button
+                                    }
+                                    viewModel.requestSend(address, BigDecimal.parseString(amount))
+                                } else {
+                                    scope.launch {
+                                        snackbarHostState.showSnackbar("Please fill in all fields")
+                                    }
+                                }
+                            },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(56.dp),
+                            enabled = !signing
+                        ) {
+                            if (signing) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(24.dp),
+                                    color = MaterialTheme.colorScheme.onPrimary
+                                )
+                            } else {
+                                Text("Send")
+                            }
                         }
                     }
                 }
@@ -662,6 +728,85 @@ private fun FeeSelector(
             style = MaterialTheme.typography.labelSmall,
             color = if (autoFeeFallback) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant
         )
+    }
+}
+
+@Composable
+private fun MnemonicSendPromptCard(
+    mnemonicTarget: KeyboardTarget,
+    showPassphrase: Boolean,
+    passphraseTarget: KeyboardTarget,
+    errorText: String?,
+    onSignAndSend: () -> Unit,
+    onCancel: () -> Unit
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(20.dp),
+        border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.15f)),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            horizontalAlignment = Alignment.Start
+        ) {
+            Text(
+                text = "Recovery Phrase Required",
+                style = MaterialTheme.typography.titleMedium
+            )
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                text = "This wallet is read-only. Enter your recovery phrase to sign and send. It is wiped immediately after use.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Spacer(modifier = Modifier.height(16.dp))
+            SecureOutlinedTextField(
+                target = mnemonicTarget,
+                label = { Text("Recovery Phrase") },
+                placeholder = { Text("your twelve or twenty-four word phrase") },
+                layoutType = KeyboardLayoutType.Qwerty,
+                masked = false,
+                singleLine = false,
+                maxLines = 4,
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(16.dp)
+            )
+            if (showPassphrase) {
+                Spacer(modifier = Modifier.height(12.dp))
+                SecureOutlinedTextField(
+                    target = passphraseTarget,
+                    label = { Text("Passphrase") },
+                    layoutType = KeyboardLayoutType.Qwerty,
+                    masked = true,
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(16.dp)
+                )
+            }
+            if (errorText != null) {
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = errorText,
+                    color = MaterialTheme.colorScheme.error,
+                    style = MaterialTheme.typography.bodySmall
+                )
+            }
+            Spacer(modifier = Modifier.height(16.dp))
+            Button(
+                onClick = onSignAndSend,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("Sign & Send")
+            }
+            Spacer(modifier = Modifier.height(8.dp))
+            TextButton(onClick = onCancel, modifier = Modifier.fillMaxWidth()) {
+                Text("Cancel")
+            }
+        }
     }
 }
 

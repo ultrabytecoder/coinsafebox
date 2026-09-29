@@ -12,6 +12,7 @@ import com.ultrabytecoder.coinsafebox.domain.model.TransactionStatus
 import com.ultrabytecoder.coinsafebox.domain.repository.AccountRepository
 import com.ultrabytecoder.coinsafebox.domain.repository.TransactionRepository
 import com.ultrabytecoder.coinsafebox.providers.Provider
+import com.ultrabytecoder.coinsafebox.providers.ReadOnlyException
 import com.ultrabytecoder.coinsafebox.providers.SyncMode
 import com.ultrabytecoder.coinsafebox.providers.TrxBase
 import com.ultrabytecoder.coinsafebox.providers.sunToTrx
@@ -35,13 +36,15 @@ import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
 
 class Trc20TokenProvider(
-    masterKey: DeterministicWallet.ExtendedPrivateKey,
+    masterKey: DeterministicWallet.ExtendedPrivateKey?,
     private val accountRepository: AccountRepository,
     val params: JsonObject,
     networkConfig: NetworkConfig,
     private val transactionRepository: TransactionRepository,
     private val createClient: () -> HttpClient = { HttpClient() }
 ) : TrxBase(masterKey, networkConfig), Provider {
+
+    override val isReadOnly: Boolean get() = masterKey == null
 
     private val contractAddress: String = params["tokenAddress"]?.jsonPrimitive?.content
         ?: throw IllegalArgumentException("Missing tokenAddress in params")
@@ -61,6 +64,10 @@ class Trc20TokenProvider(
     override suspend fun getAddress(accountId: String): String {
         val account = accountRepository.getAccount(accountId)
             ?: throw IllegalArgumentException("Account not found: $accountId")
+        if (masterKey == null) {
+            return account.address
+                ?: throw IllegalStateException("No address persisted for read-only account ${account.id}")
+        }
         val key = deriveTrxKeyFromPath(account.derivationPath)
         return trxAddressFromDerivedKey(key)
     }
@@ -158,6 +165,7 @@ class Trc20TokenProvider(
         accountId: String,
         feeParams: CustomFeeParams?
     ): String {
+        if (masterKey == null) throw ReadOnlyException()
         val feeLimit = when (feeParams) {
             is CustomFeeParams.Tron -> feeParams.feeLimitSun
             else -> networkConfig.trc20FeeLimit

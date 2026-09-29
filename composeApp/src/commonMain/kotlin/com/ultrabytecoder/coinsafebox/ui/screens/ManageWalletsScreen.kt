@@ -19,6 +19,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -32,6 +33,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -47,11 +49,13 @@ import compose.icons.feathericons.ArrowLeft
 import compose.icons.feathericons.Briefcase
 import compose.icons.feathericons.Edit2
 import compose.icons.feathericons.Key
+import compose.icons.feathericons.Lock
 import compose.icons.feathericons.MoreVertical
 import compose.icons.feathericons.Plus
 import compose.icons.feathericons.Trash2
 import com.ultrabytecoder.coinsafebox.domain.model.WalletInfo
 import com.ultrabytecoder.coinsafebox.navigation.Screen
+import com.ultrabytecoder.coinsafebox.ui.components.ReadOnlyBadge
 import com.ultrabytecoder.coinsafebox.ui.viewmodel.ManageWalletsViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -64,6 +68,18 @@ fun ManageWalletsScreen(
 
     var walletToDelete by remember { mutableStateOf<WalletInfo?>(null) }
     var walletToRename by remember { mutableStateOf<WalletInfo?>(null) }
+    var walletToRemoveKey by remember { mutableStateOf<WalletInfo?>(null) }
+    val removeMasterKeyError by viewModel.removeMasterKeyError.collectAsStateWithLifecycle()
+
+    // Auto-close the remove-master-key dialog once the wallet has actually flipped
+    // to read-only (success). On failure the error stays visible in the dialog.
+    LaunchedEffect(wallets, walletToRemoveKey) {
+        val target = walletToRemoveKey ?: return@LaunchedEffect
+        val current = wallets.find { it.id == target.id }
+        if (current != null && current.isReadOnly) {
+            walletToRemoveKey = null
+        }
+    }
 
     walletToDelete?.let { wallet ->
         DeleteConfirmationDialog(
@@ -84,6 +100,18 @@ fun ManageWalletsScreen(
                 walletToRename = null
             },
             onDismiss = { walletToRename = null }
+        )
+    }
+
+    walletToRemoveKey?.let { wallet ->
+        RemoveMasterKeyDialog(
+            walletName = wallet.name,
+            error = removeMasterKeyError,
+            onConfirm = { viewModel.removeMasterKey(wallet.id) },
+            onDismiss = {
+                viewModel.clearRemoveMasterKeyError()
+                walletToRemoveKey = null
+            }
         )
     }
 
@@ -146,7 +174,8 @@ fun ManageWalletsScreen(
                             onDelete = { walletToDelete = wallet },
                             onExportMnemonic = {
                                 navController.navigate(Screen.ExportMnemonic(wallet.id))
-                            }
+                            },
+                            onRemoveMasterKey = { walletToRemoveKey = wallet }
                         )
                     }
                 }
@@ -176,7 +205,8 @@ private fun WalletItem(
     wallet: WalletInfo,
     onRename: () -> Unit,
     onDelete: () -> Unit,
-    onExportMnemonic: () -> Unit
+    onExportMnemonic: () -> Unit,
+    onRemoveMasterKey: () -> Unit
 ) {
     var menuExpanded by remember { mutableStateOf(false) }
 
@@ -199,6 +229,10 @@ private fun WalletItem(
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Medium
                 )
+                if (wallet.isReadOnly) {
+                    Spacer(modifier = Modifier.height(4.dp))
+                    ReadOnlyBadge()
+                }
             }
             Box {
                 IconButton(onClick = { menuExpanded = true }) {
@@ -226,6 +260,17 @@ private fun WalletItem(
                         },
                         leadingIcon = {
                             Icon(FeatherIcons.Key, contentDescription = null, modifier = Modifier.size(18.dp))
+                        }
+                    )
+                    DropdownMenuItem(
+                        text = { Text(if (wallet.isReadOnly) "Read-only (key removed)" else "Remove Master Key") },
+                        enabled = !wallet.isReadOnly,
+                        onClick = {
+                            menuExpanded = false
+                            onRemoveMasterKey()
+                        },
+                        leadingIcon = {
+                            Icon(FeatherIcons.Lock, contentDescription = null, modifier = Modifier.size(18.dp))
                         }
                     )
                     DropdownMenuItem(
@@ -294,6 +339,53 @@ private fun RenameWalletDialog(
                 enabled = newName.isNotBlank() && newName.trim() != currentName
             ) {
                 Text("Rename")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel")
+            }
+        }
+    )
+}
+
+@Composable
+private fun RemoveMasterKeyDialog(
+    walletName: String,
+    error: String?,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    var acknowledged by remember { mutableStateOf(false) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Remove Master Key") },
+        text = {
+            Column {
+                Text(
+                    "This is IRREVERSIBLE. \"$walletName\" will become read-only: you can still view balances and transaction history, but sending requires your recovery phrase."
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Checkbox(
+                        checked = acknowledged,
+                        onCheckedChange = { acknowledged = it }
+                    )
+                    Text("I have backed up my recovery phrase")
+                }
+                if (error != null) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(error, color = MaterialTheme.colorScheme.error)
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = onConfirm,
+                enabled = acknowledged
+            ) {
+                Text("Remove", color = MaterialTheme.colorScheme.error)
             }
         },
         dismissButton = {

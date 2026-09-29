@@ -20,12 +20,12 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 
 abstract class TrxBase(
-    protected val masterKey: DeterministicWallet.ExtendedPrivateKey,
+    protected val masterKey: DeterministicWallet.ExtendedPrivateKey?,
     protected val networkConfig: NetworkConfig
 ) {
 
     protected fun deriveTrxKey(accountIndex: Long): DeterministicWallet.ExtendedPrivateKey {
-        return masterKey.derivePrivateKey(
+        return masterKey!!.derivePrivateKey(
             listOf(
                 DeterministicWallet.hardened(44),
                 DeterministicWallet.hardened(195),
@@ -40,7 +40,7 @@ abstract class TrxBase(
         val segments = DerivationPathResolver.parsePath(path).map { (index, hardened) ->
             if (hardened) DeterministicWallet.hardened(index) else index
         }
-        return masterKey.derivePrivateKey(segments)
+        return masterKey!!.derivePrivateKey(segments)
     }
 
     protected fun trxAddressFromDerivedKey(key: DeterministicWallet.ExtendedPrivateKey): String {

@@ -77,6 +77,7 @@ import com.ultrabytecoder.coinsafebox.domain.usecase.GetAccountAddressUseCase
 import com.ultrabytecoder.coinsafebox.domain.usecase.GetMnemonicUseCase
 import com.ultrabytecoder.coinsafebox.domain.usecase.DeleteWalletUseCase
 import com.ultrabytecoder.coinsafebox.domain.usecase.RenameWalletUseCase
+import com.ultrabytecoder.coinsafebox.domain.usecase.RemoveMasterKeyUseCase
 import com.ultrabytecoder.coinsafebox.domain.usecase.SetupPinUseCase
 import com.ultrabytecoder.coinsafebox.domain.usecase.VerifyPinUseCase
 import com.ultrabytecoder.coinsafebox.domain.usecase.ChangePinUseCase
@@ -214,12 +215,13 @@ fun App() {
                 val getAccountAddress: GetAccountAddressUseCase = koinInject()
                 val accountRepository: com.ultrabytecoder.coinsafebox.domain.repository.AccountRepository = koinInject()
                 val transactionRepository: TransactionRepository = koinInject()
+                val walletRepository: com.ultrabytecoder.coinsafebox.domain.repository.WalletRepository = koinInject()
                 val settingsStorage: com.ultrabytecoder.coinsafebox.data.SettingsStorage = koinInject()
                 val quoteProvider: FiatQuoteProvider = koinInject()
                 val viewModel = rememberDisposableViewModel(route.accountId, route.preselectedTokenId) {
                     AccountDetailsViewModel(
                         route.accountId, route.preselectedTokenId, getAccounts, getAccountAddress,
-                        accountRepository, transactionRepository, settingsStorage, quoteProvider
+                        accountRepository, transactionRepository, walletRepository, settingsStorage, quoteProvider
                     )
                 }
                 AccountDetailsScreen(navController, viewModel)
@@ -237,9 +239,10 @@ fun App() {
                 val networkConfig: com.ultrabytecoder.coinsafebox.data.NetworkConfig = koinInject()
                 val settingsStorage: com.ultrabytecoder.coinsafebox.data.SettingsStorage = koinInject()
                 val quoteProvider: FiatQuoteProvider = koinInject()
+                val walletRepository: com.ultrabytecoder.coinsafebox.domain.repository.WalletRepository = koinInject()
                 val viewModel = rememberDisposableViewModel(route.accountId) {
                     SendViewModel(route.accountId, getAccounts, send, estimateFee, syncAccount,
-                        accountRepository, utxoRepository, transactionRepository, keyProvider, networkConfig, settingsStorage, quoteProvider)
+                        accountRepository, utxoRepository, transactionRepository, keyProvider, networkConfig, settingsStorage, quoteProvider, walletRepository)
                 }
                 SendScreen(navController, viewModel)
             }
@@ -301,8 +304,9 @@ fun App() {
                 val getWallets: GetWalletsUseCase = koinInject()
                 val deleteWallet: DeleteWalletUseCase = koinInject()
                 val renameWallet: RenameWalletUseCase = koinInject()
+                val removeMasterKey: RemoveMasterKeyUseCase = koinInject()
                 val viewModel = rememberDisposableViewModel {
-                    ManageWalletsViewModel(getWallets, deleteWallet, renameWallet)
+                    ManageWalletsViewModel(getWallets, deleteWallet, renameWallet, removeMasterKey)
                 }
                 ManageWalletsScreen(navController, viewModel)
             }

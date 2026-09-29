@@ -13,6 +13,7 @@ end-to-end session of onboarding a fresh install and creating accounts.
 | `build-install.sh` | Build the debug APK for a network flavor, install, launch. |
 | `test_create_account.py` | E2E test: onboarding (or unlock) → create account(s) → verify list entry, derivation path, address. |
 | `test_resume_wallet_flow.py` | E2E test: create-wallet flow interrupted by a session lock (app backgrounded) → re-auth → flow resumes at the right step (REVEAL clamps to PASSPHRASE), wallet name preserved. |
+| `test_readonly_wallet.py` | E2E test: create wallet + account(s) (auto) → Remove Master Key (cancel + confirm, "Read-only" badge) → verify the read-only account still shows address/QR/balance (data intact). Fund-independent. |
 | `screenshots/` | Screenshots written by the helpers (`shot`, `final`, `stuck`). |
 
 ## Prerequisites
@@ -69,7 +70,29 @@ summary table and saves a `screenshots/final.png`.
    - tap **Create Account**;
    - assert the list shows `<Chain> account <n>`;
    - open the account and assert a **valid address** is rendered
-     (BTC: `tb1…` bech32, ETH: `0x`+40 hex, TRX: `T…`, TON: `EQ/UQ…`).
+      (BTC: `tb1…` bech32, ETH: `0x`+40 hex, TRX: `T…`, TON: `EQ/UQ…`).
+
+## What the read-only wallet E2E covers
+
+`test_readonly_wallet.py` — always a fresh install (a clean single-wallet state
+keeps the Manage Wallets list unambiguous). Fund-independent: it verifies the
+read-only feature at the view layer, so no testnet funding is needed. The script
+creates the wallet and the account(s) by itself.
+
+1. Onboard (PIN) → create the wallet by generating a new phrase.
+2. Create one account per chain; verify a valid address is rendered.
+3. Remove Master Key:
+   - **CANCEL**: dialog dismissed, wallet stays full (no "Read-only" badge).
+   - **CONFIRM**: key wiped, a "Read-only" badge appears, and the wallet menu
+     item becomes "Read-only (key removed)".
+4. Verify the now read-only account still shows its address, the Address/QR
+   section and its balance (read-only means view-only, not blank), and that the
+   address is unchanged (data intact).
+
+Note: the READ-ONLY SEND path (re-entering the recovery phrase to sign/send) is
+NOT automated — those fields use the app's custom on-screen keyboard and are
+deliberately out of the IME focus chain, so `adb input` can't drive them. It is
+a manual test (see `improvement-plans/readonly-wallet-e2e-manual.md`, E2E-3).
 
 ## Manual test procedure (what the script automates)
 

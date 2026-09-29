@@ -268,6 +268,7 @@ class BtcProviderSyncTest {
         val masterKey = DeterministicWallet.generate(Hex.decode(SEED_HEX))
         return BtcProvider(
             masterKey,
+            null,
             FakeUtxoRepository(emptyList()),
             FakeAccountRepository(mapOf(ACCOUNT_ID to account)),
             JsonObject(emptyMap()),
