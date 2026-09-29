@@ -12,6 +12,7 @@ end-to-end session of onboarding a fresh install and creating accounts.
 | `emulator.sh` | Start/stop/status the test AVD, wait for full boot. |
 | `build-install.sh` | Build the debug APK for a network flavor, install, launch. |
 | `test_create_account.py` | E2E test: onboarding (or unlock) → create account(s) → verify list entry, derivation path, address. |
+| `test_resume_wallet_flow.py` | E2E test: create-wallet flow interrupted by a session lock (app backgrounded) → re-auth → flow resumes at the right step (REVEAL clamps to PASSPHRASE), wallet name preserved. |
 | `screenshots/` | Screenshots written by the helpers (`shot`, `final`, `stuck`). |
 
 ## Prerequisites
