@@ -98,7 +98,12 @@ class SendViewModel(
     private val _wallet = MutableStateFlow<WalletInfo?>(null)
     val wallet: StateFlow<WalletInfo?> = _wallet.asStateFlow()
 
-    val isReadOnly: StateFlow<Boolean> = _wallet.map { it?.isReadOnly ?: false }.stateIn(viewModelScope, SharingStarted.Lazily, false)
+    // Plain state (not a stateIn(Lazily) chain): requestSend reads .value without
+    // the UI ever collecting the flow, so a Lazily-started upstream would report
+    // `false` forever and the read-only branch (mnemonic prompt) would be
+    // unreachable. Kept in sync with _wallet below.
+    private val _isReadOnly = MutableStateFlow(false)
+    val isReadOnly: StateFlow<Boolean> = _isReadOnly.asStateFlow()
     val hasPassphrase: StateFlow<Boolean> = _wallet.map { it?.hasPassphrase ?: false }.stateIn(viewModelScope, SharingStarted.Lazily, false)
 
     private val _phase = MutableStateFlow(SendPhase.ENTER_DETAILS)
@@ -175,12 +180,17 @@ class SendViewModel(
         viewModelScope.launch {
             _account.value = getAccounts.byId(accountId)
             _wallet.value = _account.value?.let { walletRepository.getWallet(it.walletId) }
+            _isReadOnly.value = _wallet.value?.isReadOnly ?: false
 
             // Live collector so a wallet flipped to read-only while this VM is alive is reflected.
             viewModelScope.launch {
                 walletRepository.getWalletsFlow().collect { list ->
                     val wid = _account.value?.walletId
-                    if (wid != null) _wallet.value = list.find { it.id == wid }
+                    if (wid != null) {
+                        val w = list.find { it.id == wid }
+                        _wallet.value = w
+                        _isReadOnly.value = w?.isReadOnly ?: false
+                    }
                 }
             }
 
