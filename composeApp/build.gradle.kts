@@ -249,8 +249,8 @@ android {
         applicationId = "com.ultrabytecoder.coinsafebox"
         minSdk = libs.versions.android.minSdk.get().toInt()
         targetSdk = libs.versions.android.targetSdk.get().toInt()
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = 2
+        versionName = "1.1"
     }
 
     buildFeatures {
@@ -375,7 +375,7 @@ compose.desktop {
             targetFormats(TargetFormat.Deb, TargetFormat.Rpm, TargetFormat.Msi, TargetFormat.Dmg)
             // Suffix per network so testnet and mainnet installers coexist.
             packageName = "CoinSafeBox-$kkNetwork"
-            packageVersion = "1.0.0"
+            packageVersion = "1.1.0"
             windows {
                 menuGroup = "CoinSafeBox"
                 shortcut = true
