@@ -12,6 +12,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
 import compose.icons.FeatherIcons
+import compose.icons.feathericons.AlertTriangle
 import compose.icons.feathericons.ArrowLeft
 import compose.icons.feathericons.Camera
 import com.ionspin.kotlin.bignum.decimal.BigDecimal
@@ -22,6 +23,8 @@ import com.ultrabytecoder.coinsafebox.ui.theme.AuroraPrimary
 import com.ultrabytecoder.coinsafebox.domain.model.CustomFeeParams
 import com.ultrabytecoder.coinsafebox.domain.model.FeeEstimation
 import com.ultrabytecoder.coinsafebox.domain.model.FeePresets
+import com.ultrabytecoder.coinsafebox.ui.util.BalanceSufficiency
+import com.ultrabytecoder.coinsafebox.ui.util.evaluateBalanceSufficiency
 import com.ultrabytecoder.coinsafebox.ui.util.formatFeeChipRate
 import com.ultrabytecoder.coinsafebox.ui.util.formatFeeDetail
 import com.ultrabytecoder.coinsafebox.ui.util.formatFiat
@@ -69,6 +72,7 @@ fun SendScreen(
     val validationError by viewModel.validationError.collectAsState()
     val phase by viewModel.phase.collectAsState()
     val hasPassphrase by viewModel.hasPassphrase.collectAsState()
+    val isReadOnly by viewModel.isReadOnly.collectAsState()
     val sendError by viewModel.sendError.collectAsState()
     val sendResult by viewModel.sendResult.collectAsState()
     var address by remember { mutableStateOf("") }
@@ -221,6 +225,22 @@ fun SendScreen(
     val total = if (!isTokenAccount && parsedAmount != null && feeVal?.totalCost != null) {
         parsedAmount.add(feeVal.totalCost)
     } else null
+
+    // Pre-emptive, non-blocking warning for when the balance can't cover the send.
+    // A pure derivation of already-collected state (mirrors how `total` is computed
+    // above); the native/token comparison rules live in evaluateBalanceSufficiency.
+    val balanceSufficiency = evaluateBalanceSufficiency(
+        balanceRaw = accountVal!!.amount,
+        parsedAmount = parsedAmount,
+        feeEstimation = fee,
+        isTokenAccount = isTokenAccount
+    )
+
+    // Hard block (disabled Send button) for full wallets when the balance can't
+    // cover the send. Read-only wallets stay enabled so the recovery-phrase guard
+    // remains reachable; it is verified before any on-chain operation.
+    val sendEnabled = !signing &&
+        (isReadOnly || balanceSufficiency == BalanceSufficiency.Sufficient)
 
     CompositionLocalProvider(LocalKeyboardController provides keyboardController) {
         Scaffold(
@@ -449,6 +469,13 @@ fun SendScreen(
                             style = MaterialTheme.typography.bodySmall
                         )
                     }
+
+                    if (balanceSufficiency != BalanceSufficiency.Sufficient) {
+                        Spacer(modifier = Modifier.height(12.dp))
+                        InsufficientBalanceBanner(
+                            message = insufficientBalanceMessage(accountVal!!.symbol, balanceSufficiency)
+                        )
+                    }
                     }
                 }
 
@@ -510,7 +537,7 @@ fun SendScreen(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .height(56.dp),
-                            enabled = !signing
+                            enabled = sendEnabled
                         ) {
                             if (signing) {
                                 CircularProgressIndicator(
@@ -806,6 +833,59 @@ private fun MnemonicSendPromptCard(
             TextButton(onClick = onCancel, modifier = Modifier.fillMaxWidth()) {
                 Text("Cancel")
             }
+        }
+    }
+}
+
+/**
+ * Human-readable warning copy for an insufficient-balance result. The token
+ * variant deliberately never mentions the network fee, because for token
+ * accounts the fee is paid in the parent native coin and is not verified here.
+ */
+private fun insufficientBalanceMessage(symbol: String, result: BalanceSufficiency): String =
+    when (result) {
+        BalanceSufficiency.InsufficientTokenBalance ->
+            "Insufficient $symbol balance to send this amount."
+        BalanceSufficiency.InsufficientNative ->
+            "Insufficient $symbol balance for the amount plus network fee."
+        BalanceSufficiency.InsufficientNativePendingFee ->
+            "Insufficient $symbol balance. The network fee is still estimating, so the required amount may be higher."
+        BalanceSufficiency.Sufficient -> ""
+    }
+
+/**
+ * Prominent, non-blocking warning shown when the balance can't cover the send.
+ * It informs the user up front; the on-chain/provider send guards remain the
+ * authoritative check, so the banner does not itself disable the Send button.
+ */
+@Composable
+private fun InsufficientBalanceBanner(
+    message: String,
+    modifier: Modifier = Modifier
+) {
+    Card(
+        modifier = modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.errorContainer,
+            contentColor = MaterialTheme.colorScheme.onErrorContainer
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                imageVector = FeatherIcons.AlertTriangle,
+                contentDescription = null,
+                modifier = Modifier.size(18.dp)
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Text(
+                text = message,
+                style = MaterialTheme.typography.bodyMedium
+            )
         }
     }
 }

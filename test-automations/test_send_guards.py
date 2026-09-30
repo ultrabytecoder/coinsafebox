@@ -252,6 +252,14 @@ def main():
     ui.shot("send-filled")
 
     print("-> 'Send' with filled fields on a zero-balance account")
+    # Hard-blocking: a full wallet that can't cover amount+fee shows an
+    # insufficient-balance warning and a DISABLED Send button; the tap is a no-op.
+    check("zero-balance send: insufficient-balance warning is shown",
+          ui.find("Insufficient BTC balance") is not None)
+    check("zero-balance send: Send button is disabled",
+          ui.button_enabled("Send") is False,
+          f"enabled={ui.button_enabled('Send')!r}",
+          soft=True)
     ui.tap_text_bottom("Send")
     # The broadcast must be guarded: no Transaction Sent screen may appear.
     time.sleep(8)

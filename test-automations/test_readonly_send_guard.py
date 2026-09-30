@@ -187,9 +187,11 @@ def remove_master_key():
     ui.wait_for("Add Account", timeout=45)
 
 
-def fill_send_form():
+def fill_send_form(submit=True):
     """On the (full-form) send screen: type amount + recipient via the
-    on-screen keyboards, then tap Send. Returns once the send was requested."""
+    on-screen keyboards. When submit=True also tap Send; when False leave the
+    form filled so the caller can assert on it (e.g. the balance warning) before
+    submitting."""
     ui.tap_field_below("Amount")
     time.sleep(0.8)
     ui.type_onscreen(AMOUNT)
@@ -202,7 +204,8 @@ def fill_send_form():
     time.sleep(1.0)
     if ui.find(STATE["addr"], exact=True) is None:
         raise RuntimeError("recipient not reflected in the field")
-    ui.tap_text_bottom("Send")
+    if submit:
+        ui.tap_text_bottom("Send")
 
 
 def main():
@@ -244,8 +247,19 @@ def main():
     if ui.wait_for("Recipient Address", timeout=60) is None:
         raise RuntimeError("did not reach the send screen")
 
-    print("-> filling the send form and requesting the send")
-    fill_send_form()
+    print("-> filling the send form (not submitting yet)")
+    fill_send_form(submit=False)
+    # A read-only zero-balance account shows the same insufficient-balance
+    # warning, but the Send button STAYS enabled: the recovery-phrase guard must
+    # remain reachable (it is verified before any on-chain operation).
+    check("read-only send: insufficient-balance warning is shown",
+          ui.find("Insufficient BTC balance") is not None)
+    check("read-only send: Send button stays enabled (phrase guard reachable)",
+          ui.button_enabled("Send") is True,
+          f"enabled={ui.button_enabled('Send')!r}",
+          soft=True)
+    print("-> requesting the send")
+    ui.tap_text_bottom("Send")
 
     if ui.wait_for("Recovery Phrase Required", timeout=90) is None:
         check("read-only send: mnemonic prompt appears", False,

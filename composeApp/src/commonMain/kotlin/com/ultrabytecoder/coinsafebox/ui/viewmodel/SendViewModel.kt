@@ -27,7 +27,9 @@ import com.ultrabytecoder.coinsafebox.domain.usecase.SendUseCase
 import com.ultrabytecoder.coinsafebox.domain.usecase.SyncAccountUseCase
 import com.ultrabytecoder.coinsafebox.providers.ProviderFactory
 import com.ultrabytecoder.coinsafebox.security.SessionLockNotifier
+import com.ultrabytecoder.coinsafebox.ui.util.BalanceSufficiency
 import com.ultrabytecoder.coinsafebox.ui.util.SecureTextFieldState
+import com.ultrabytecoder.coinsafebox.ui.util.evaluateBalanceSufficiency
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -475,6 +477,18 @@ class SendViewModel(
         if (address.isBlank() || amount <= BigDecimal.ZERO) {
             _sendError.value = "Please fill in all fields"
             return
+        }
+        // Hard block for full (non-readonly) wallets when the balance can't cover
+        // the send. Read-only wallets intentionally fall through to the mnemonic
+        // prompt: the recovery-phrase guard must stay reachable and is verified
+        // before any on-chain operation, and the broadcast itself is still guarded.
+        val acc = _account.value
+        if (acc != null && !isReadOnly.value) {
+            val result = evaluateBalanceSufficiency(acc.amount, amount, _fee.value, acc.type.isToken)
+            if (result != BalanceSufficiency.Sufficient) {
+                _sendError.value = "Insufficient ${acc.symbol} balance"
+                return
+            }
         }
         if (isReadOnly.value) {
             pendingAddress = address

@@ -160,6 +160,28 @@ def find_by_text(pred, xml=None):
     return None
 
 
+def button_enabled(label, exact=True, xml=None):
+    """Return the `enabled` state of the clickable node nearest `label`, or None.
+
+    Compose renders a button's visible text in a child TextView; the clickable
+    Button wrapper (the node carrying `enabled="false"` when disabled) is the
+    clickable node whose centre sits closest to the label's centre. Use this to
+    assert a Send button is disabled/enabled. Returns None if the label or no
+    clickable node is found (caller should treat that as "could not determine").
+    """
+    xml = xml or dump()
+    ns = nodes(xml)
+    labels = [n for n in ns if _match(n, label, exact) and n["cy"] is not None]
+    if not labels:
+        return None
+    label_node = max(labels, key=lambda n: n["cy"])  # bottom-most (the button, not a title)
+    clickable = [n for n in ns if n["clickable"] and n["cy"] is not None]
+    if not clickable:
+        return None
+    btn = min(clickable, key=lambda n: abs(n["cy"] - label_node["cy"]))
+    return btn["enabled"]
+
+
 def wait_for(label, timeout=60, exact=False, interval=2.0):
     """Poll until a node matching `label` appears (fresh dump per poll).
 
