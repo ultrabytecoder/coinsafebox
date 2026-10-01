@@ -1,8 +1,12 @@
-# CoinSafeBox Android — Test Automations
+ # CoinSafeBox Android — Test Automations
 
 UI-level automation for the CoinSafeBox Android app, driven over `adb` +
 `uiautomator` against an emulator (or any USB device). Built from a real
 end-to-end session of onboarding a fresh install and creating accounts.
+
+> **Desktop app:** see [`desktop/`](desktop/README.md) — black-box E2E for the
+> Compose Desktop build (screenshot + OCR + XTEST on a managed Xvfb display),
+> mirroring the flows below.
 
 ## Files
 
