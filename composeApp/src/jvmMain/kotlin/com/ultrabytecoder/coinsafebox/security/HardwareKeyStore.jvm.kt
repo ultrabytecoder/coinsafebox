@@ -141,6 +141,12 @@ actual object HardwareKeyStore {
             fallbackKey = null
             val p = provider()
             if (p.handlesBlobOperations()) p.deleteBlobKey() else p.deleteKey()
+            // Re-bind the install ID after deleting: provider() only re-applies
+            // installBoundId when it CONSTRUCTS a new provider, not on this path
+            // (the provider already exists). Forward-looking defense-in-depth for
+            // blob providers that reset their install binding on delete — keeps the
+            // device key install-bound for the rest of the process.
+            installBoundId?.let { p.configureInstallId(it) }
         }
     }
 

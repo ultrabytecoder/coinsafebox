@@ -72,7 +72,11 @@ class WindowsBackend : HardwareKeyBackend {
     }
 
     private fun effectiveEntropy(): ByteArray {
-        val id = installId ?: return DPAPI_ENTROPY
+        // Never return the shared [DPAPI_ENTROPY] constant by reference: callers
+        // (dpapiProtect/dpapiUnprotect) wipe the returned array, which would
+        // otherwise zeroize the companion constant and break the immediately
+        // following round-trip verification (and every later use) for the process.
+        val id = installId ?: return DPAPI_ENTROPY.copyOf()
         val md = java.security.MessageDigest.getInstance("SHA-256")
         md.update(DPAPI_ENTROPY)
         md.update(id)
@@ -146,8 +150,10 @@ class WindowsBackend : HardwareKeyBackend {
         synchronized(lock) {
             cachedKey?.wipe()
             cachedKey = null
-            installId?.wipe()
-            installId = null
+            // installId is install-binding metadata, not device-key material: it is
+            // persisted in settings (KeyManager, KEY_INSTALL_ID) and is NOT removed
+            // by KeyManager.deleteAll(). Keep it so the next generated DPAPI blob is
+            // still wrapped with install-bound entropy (not the bare constant).
             blobFile.delete()
         }
     }
