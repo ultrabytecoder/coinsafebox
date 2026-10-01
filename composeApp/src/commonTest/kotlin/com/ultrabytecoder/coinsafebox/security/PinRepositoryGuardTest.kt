@@ -40,10 +40,12 @@ class PinRepositoryGuardTest {
         override fun getWalletsFlow(): Flow<List<WalletInfo>> = kotlinx.coroutines.flow.flowOf(emptyList())
         override suspend fun getWallet(id: Long): WalletInfo? = null
         override suspend fun getMasterSeed(id: Long): ByteArray? = null
-        override suspend fun insertWallet(name: String, masterSeed: ByteArray, mnemonic: ByteArray?): Long = 0
+        override suspend fun insertWallet(name: String, masterSeed: ByteArray, mnemonic: ByteArray?, hasPassphrase: Boolean): Long = 0
         override suspend fun deleteWallet(id: Long) {}
         override suspend fun getStoredMnemonic(id: Long): ByteArray? = null
         override suspend fun renameWallet(id: Long, name: String) {}
+        override suspend fun clearMasterKey(id: Long) {}
+        override suspend fun restoreMasterKey(id: Long, masterSeed: ByteArray, mnemonic: ByteArray?) {}
     }
 
     private class FakeSessionManager : com.ultrabytecoder.coinsafebox.data.SessionUnlocker {

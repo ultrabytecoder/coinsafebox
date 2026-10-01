@@ -29,6 +29,7 @@ import com.ultrabytecoder.coinsafebox.domain.usecase.GetMnemonicUseCase
 import com.ultrabytecoder.coinsafebox.domain.usecase.DeleteWalletUseCase
 import com.ultrabytecoder.coinsafebox.domain.usecase.RenameWalletUseCase
 import com.ultrabytecoder.coinsafebox.domain.usecase.SendUseCase
+import com.ultrabytecoder.coinsafebox.domain.usecase.RemoveMasterKeyUseCase
 import com.ultrabytecoder.coinsafebox.domain.usecase.GetSecurityMethodUseCase
 import com.ultrabytecoder.coinsafebox.domain.usecase.SetSecurityMethodUseCase
 import com.ultrabytecoder.coinsafebox.domain.usecase.SetupPinUseCase
@@ -38,6 +39,7 @@ import com.ultrabytecoder.coinsafebox.domain.usecase.SyncUseCase
 import com.ultrabytecoder.coinsafebox.domain.usecase.VerifyPinUseCase
 import com.ultrabytecoder.coinsafebox.security.KeyManager
 import com.ultrabytecoder.coinsafebox.security.SessionManager
+import com.ultrabytecoder.coinsafebox.ui.viewmodel.CreateWalletFlowDraft
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -55,6 +57,10 @@ fun appModule(networkConfig: NetworkConfig) = module {
     single<DatabaseProvider> { get<SessionManager>() }
     single<SessionUnlocker> { get<SessionManager>() }
 
+    // App-scoped in-memory draft of non-secret create-wallet flow state,
+    // so an interrupted flow (session lock) can resume after re-auth.
+    single { CreateWalletFlowDraft() }
+
     single<AccountRepository> { com.ultrabytecoder.coinsafebox.data.AccountRepository(get()) }
     single<UtxoRepository> { com.ultrabytecoder.coinsafebox.data.UtxoRepository(get()) }
     single<TransactionRepository> { com.ultrabytecoder.coinsafebox.data.TransactionRepository(get()) }
@@ -64,18 +70,19 @@ fun appModule(networkConfig: NetworkConfig) = module {
     factory { CreateWalletUseCase(get()) }
     factory { GetMnemonicUseCase(get()) }
     factory { GetAccountsUseCase(get()) }
-    factory { CreateAccountUseCase(get(), get()) }
+    factory { CreateAccountUseCase(get(), get(), get()) }
     factory { AddTokenUseCase(get()) }
     factory { CreateTokenUseCase(get(), get(), get()) }
-    factory { EstimateFeeUseCase(get(), get(), get(), get(), get()) }
-    factory { SendUseCase(get(), get(), get(), get(), get()) }
-    factory { GetAccountAddressUseCase(get(), get(), get(), get(), get()) }
+    factory { EstimateFeeUseCase(get(), get(), get(), get(), get(), get()) }
+    factory { SendUseCase(get(), get(), get(), get(), get(), get()) }
+    factory { GetAccountAddressUseCase(get(), get(), get(), get(), get(), get()) }
     factory { GetWalletsUseCase(get()) }
     factory { DeleteWalletUseCase(get(), get(), get(), get()) }
     factory { RenameWalletUseCase(get()) }
+    factory { RemoveMasterKeyUseCase(get(), get(), get(), get(), get(), get()) }
     single { SyncManager() }
-    factory { SyncUseCase(get(), get(), get(), get(), get(), get()) }
-    factory { SyncAccountUseCase(get(), get(), get(), get(), get(), get()) }
+    factory { SyncUseCase(get(), get(), get(), get(), get(), get(), get()) }
+    factory { SyncAccountUseCase(get(), get(), get(), get(), get(), get(), get()) }
 
     single<PinRepository> { PinRepositoryImpl(get(), get(), get(), get()) }
     factory { CheckPinStatusUseCase(get()) }

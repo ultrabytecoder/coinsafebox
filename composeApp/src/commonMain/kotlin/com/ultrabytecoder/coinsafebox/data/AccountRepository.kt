@@ -6,6 +6,7 @@ import com.ultrabytecoder.coinsafebox.domain.model.AccountInfo
 import com.ultrabytecoder.coinsafebox.domain.model.AccountType
 import com.ultrabytecoder.coinsafebox.domain.repository.AccountRepository as AccountRepositoryInterface
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.IO
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.flow
@@ -115,6 +116,22 @@ class AccountRepository(private val databaseProvider: DatabaseProvider) : Accoun
                 .executeAsList()
                 .map { it.toAccountInfo() }
         }
+
+    override suspend fun getXpub(id: String): String? = withContext(Dispatchers.IO) {
+        queries.selectXpub(id).executeAsOneOrNull()?.xpub
+    }
+
+    override suspend fun updateXpub(id: String, xpub: String) {
+        withContext(Dispatchers.IO) {
+            queries.updateXpub(xpub = xpub, id = id)
+        }
+    }
+
+    override suspend fun updateAddress(id: String, address: String) {
+        withContext(Dispatchers.IO) {
+            queries.updateAddress(address = address, id = id)
+        }
+    }
 
     private fun com.ultrabytecoder.coinsafebox.db.Accounts.toAccountInfo(): AccountInfo = AccountInfo(
         id = id,

@@ -69,7 +69,7 @@ class BtcProviderCreateTransactionTest {
         val masterKey = DeterministicWallet.generate(Hex.decode(SEED_HEX))
         val accounts = mutableMapOf(ACCOUNT_ID to account)
         destAccount?.let { accounts[DEST_ACCOUNT_ID] = it }
-        return BtcProvider(masterKey, FakeUtxoRepository(utxos), FakeAccountRepository(accounts), JsonObject(emptyMap()), NetworkConfig.testnet("test-api-key"), FakeTransactionRepository(), createClient)
+        return BtcProvider(masterKey, null, FakeUtxoRepository(utxos), FakeAccountRepository(accounts), JsonObject(emptyMap()), NetworkConfig.testnet("test-api-key"), FakeTransactionRepository(), createClient)
     }
 
     private fun testUtxo(

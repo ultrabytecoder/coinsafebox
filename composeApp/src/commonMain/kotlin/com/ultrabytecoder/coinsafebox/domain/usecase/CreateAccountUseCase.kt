@@ -4,13 +4,17 @@ import com.ultrabytecoder.coinsafebox.data.NetworkConfig
 import com.ultrabytecoder.coinsafebox.domain.model.AccountInfo
 import com.ultrabytecoder.coinsafebox.domain.model.AccountType
 import com.ultrabytecoder.coinsafebox.domain.repository.AccountRepository
+import com.ultrabytecoder.coinsafebox.domain.service.KeyProvider
+import com.ultrabytecoder.coinsafebox.providers.BtcXpub
 import com.ultrabytecoder.coinsafebox.providers.DerivationPathResolver
+import fr.acinq.bitcoin.DeterministicWallet
 import kotlin.uuid.ExperimentalUuidApi
 import kotlin.uuid.Uuid
 
 class CreateAccountUseCase(
     private val accountRepository: AccountRepository,
-    private val networkConfig: NetworkConfig
+    private val networkConfig: NetworkConfig,
+    private val keyProvider: KeyProvider
 ) {
     /**
      * Creates a new native account and returns its ID.
@@ -56,6 +60,13 @@ class CreateAccountUseCase(
             parentAccountId = null
         )
         accountRepository.insertAccount(account)
+        if (type is AccountType.Btc) {
+            keyProvider.withMasterSeed(walletId) { seed ->
+                val masterKey = DeterministicWallet.generate(seed)
+                val xpub = BtcXpub.fromMasterKey(masterKey, resolvedPath, networkConfig.btcBip84CoinType == 1L)
+                accountRepository.updateXpub(id, xpub)
+            }
+        }
         return id
     }
 }

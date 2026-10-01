@@ -13,20 +13,30 @@ import com.ultrabytecoder.coinsafebox.domain.model.FeeEstimation
 import com.ultrabytecoder.coinsafebox.domain.model.FeePresets
 import com.ultrabytecoder.coinsafebox.domain.model.FeeValidator
 import com.ultrabytecoder.coinsafebox.domain.model.FiatCurrency
+import com.ultrabytecoder.coinsafebox.domain.model.WalletInfo
 import com.ultrabytecoder.coinsafebox.domain.model.feeSymbol
 import com.ultrabytecoder.coinsafebox.domain.provider.FiatQuoteProvider
 import com.ultrabytecoder.coinsafebox.domain.repository.AccountRepository
 import com.ultrabytecoder.coinsafebox.domain.repository.TransactionRepository
 import com.ultrabytecoder.coinsafebox.domain.repository.UtxoRepository
+import com.ultrabytecoder.coinsafebox.domain.repository.WalletRepository
 import com.ultrabytecoder.coinsafebox.domain.service.KeyProvider
 import com.ultrabytecoder.coinsafebox.domain.usecase.EstimateFeeUseCase
 import com.ultrabytecoder.coinsafebox.domain.usecase.GetAccountsUseCase
 import com.ultrabytecoder.coinsafebox.domain.usecase.SendUseCase
 import com.ultrabytecoder.coinsafebox.domain.usecase.SyncAccountUseCase
 import com.ultrabytecoder.coinsafebox.providers.ProviderFactory
+import com.ultrabytecoder.coinsafebox.security.SessionLockNotifier
+import com.ultrabytecoder.coinsafebox.ui.util.BalanceSufficiency
+import com.ultrabytecoder.coinsafebox.ui.util.SecureTextFieldState
+import com.ultrabytecoder.coinsafebox.ui.util.evaluateBalanceSufficiency
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
 sealed class FeeSelectionMode {
@@ -59,6 +69,8 @@ sealed class FeeSelectionMode {
     }
 }
 
+enum class SendPhase { ENTER_DETAILS, MNEMONIC_PROMPT, SIGNING }
+
 private object FeePreferenceKeys {
     const val MODE_PREFIX = "fee_mode_"
     const val BTC_RATE_PREFIX = "fee_custom_btc_rate_"     // Append accountId
@@ -79,10 +91,37 @@ class SendViewModel(
     private val keyProvider: KeyProvider,
     private val networkConfig: NetworkConfig,
     private val settingsStorage: SettingsStorage,
-    private val quoteProvider: FiatQuoteProvider
+    private val quoteProvider: FiatQuoteProvider,
+    private val walletRepository: WalletRepository
 ) : ViewModel() {
     private val _account = MutableStateFlow<AccountInfo?>(null)
     val account: StateFlow<AccountInfo?> = _account.asStateFlow()
+
+    private val _wallet = MutableStateFlow<WalletInfo?>(null)
+    val wallet: StateFlow<WalletInfo?> = _wallet.asStateFlow()
+
+    // Plain state (not a stateIn(Lazily) chain): requestSend reads .value without
+    // the UI ever collecting the flow, so a Lazily-started upstream would report
+    // `false` forever and the read-only branch (mnemonic prompt) would be
+    // unreachable. Kept in sync with _wallet below.
+    private val _isReadOnly = MutableStateFlow(false)
+    val isReadOnly: StateFlow<Boolean> = _isReadOnly.asStateFlow()
+    val hasPassphrase: StateFlow<Boolean> = _wallet.map { it?.hasPassphrase ?: false }.stateIn(viewModelScope, SharingStarted.Lazily, false)
+
+    private val _phase = MutableStateFlow(SendPhase.ENTER_DETAILS)
+    val phase: StateFlow<SendPhase> = _phase.asStateFlow()
+
+    val mnemonicField = SecureTextFieldState()
+    val passphraseField = SecureTextFieldState()
+
+    private val _sendError = MutableStateFlow<String?>(null)
+    val sendError: StateFlow<String?> = _sendError.asStateFlow()
+
+    private val _sendResult = MutableStateFlow<String?>(null)
+    val sendResult: StateFlow<String?> = _sendResult.asStateFlow()
+
+    private var pendingAddress: String? = null
+    private var pendingAmount: BigDecimal? = null
 
     private val _fee = MutableStateFlow<FeeEstimation?>(null)
     val fee: StateFlow<FeeEstimation?> = _fee.asStateFlow()
@@ -142,16 +181,37 @@ class SendViewModel(
 
         viewModelScope.launch {
             _account.value = getAccounts.byId(accountId)
-            _account.value?.let { acc ->
-                try {
-                    keyProvider.withMasterSeed(acc.walletId) { masterSeed ->
-                        val provider = ProviderFactory.create(
-                            acc.type, masterSeed,
-                            utxoRepository, accountRepository, transactionRepository,
-                            networkConfig, acc.params
-                        )
-                        _feePresets.value = provider.feePresets(acc.id)
+            _wallet.value = _account.value?.let { walletRepository.getWallet(it.walletId) }
+            _isReadOnly.value = _wallet.value?.isReadOnly ?: false
+
+            // Live collector so a wallet flipped to read-only while this VM is alive is reflected.
+            viewModelScope.launch {
+                walletRepository.getWalletsFlow().collect { list ->
+                    val wid = _account.value?.walletId
+                    if (wid != null) {
+                        val w = list.find { it.id == wid }
+                        _wallet.value = w
+                        _isReadOnly.value = w?.isReadOnly ?: false
                     }
+                }
+            }
+
+            val acc = _account.value
+            if (acc != null) {
+                try {
+                    val provider = if (_wallet.value?.isReadOnly == true) {
+                        val xpub = if (acc.type is AccountType.Btc) accountRepository.getXpub(acc.id) else null
+                        ProviderFactory.createReadOnly(acc.type, xpub, utxoRepository, accountRepository, transactionRepository, networkConfig, acc.params)
+                    } else {
+                        keyProvider.withMasterSeed(acc.walletId) { masterSeed ->
+                            ProviderFactory.create(
+                                acc.type, masterSeed,
+                                utxoRepository, accountRepository, transactionRepository,
+                                networkConfig, acc.params
+                            )
+                        }
+                    }
+                    _feePresets.value = provider.feePresets(acc.id)
                 } catch (e: Exception) {
                     // Preset loading failed (e.g. RPC error) — surface it instead of hiding the selector silently.
                     _feeError.value = "Fee presets could not be loaded: ${e.message ?: "network error"}"
@@ -163,6 +223,13 @@ class SendViewModel(
                         FeeSelectionMode.Auto.name()
                     )
                 }
+            }
+        }
+
+        viewModelScope.launch {
+            SessionLockNotifier.locked.collect {
+                clearSensitiveData()
+                _phase.value = SendPhase.ENTER_DETAILS
             }
         }
     }
@@ -397,12 +464,102 @@ class SendViewModel(
         }
     }
 
-    suspend fun sendTransaction(address: String, amount: BigDecimal): String {
+    suspend fun sendTransaction(address: String, amount: BigDecimal, mnemonic: CharArray? = null, passphrase: CharArray = CharArray(0)): String {
         if (_selectedFeeMode.value is FeeSelectionMode.Custom && !validateCustomFee()) {
             throw IllegalStateException("Invalid custom fee: ${_validationError.value}")
         }
-        val txid = send(accountId, address, amount, buildFeeParams())
+        val txid = send(accountId, address, amount, buildFeeParams(), mnemonic, passphrase)
         viewModelScope.launch { syncAccount(accountId) }
         return txid
+    }
+
+    fun requestSend(address: String, amount: BigDecimal) {
+        if (address.isBlank() || amount <= BigDecimal.ZERO) {
+            _sendError.value = "Please fill in all fields"
+            return
+        }
+        // Hard block for full (non-readonly) wallets when the balance can't cover
+        // the send. Read-only wallets intentionally fall through to the mnemonic
+        // prompt: the recovery-phrase guard must stay reachable and is verified
+        // before any on-chain operation, and the broadcast itself is still guarded.
+        val acc = _account.value
+        if (acc != null && !isReadOnly.value) {
+            val result = evaluateBalanceSufficiency(acc.amount, amount, _fee.value, acc.type.isToken)
+            if (result != BalanceSufficiency.Sufficient) {
+                _sendError.value = "Insufficient ${acc.symbol} balance"
+                return
+            }
+        }
+        if (isReadOnly.value) {
+            pendingAddress = address
+            pendingAmount = amount
+            _sendError.value = null
+            _phase.value = SendPhase.MNEMONIC_PROMPT
+        } else {
+            pendingAddress = address
+            pendingAmount = amount
+            startSend(null, CharArray(0))
+        }
+    }
+
+    fun confirmSend() {
+        if (mnemonicField.isBlank()) {
+            _sendError.value = "Enter your recovery phrase"
+            return
+        }
+        if (hasPassphrase.value && passphraseField.isBlank()) {
+            _sendError.value = "Enter your passphrase"
+            return
+        }
+        val a = pendingAddress
+        val m = pendingAmount
+        if (a == null || m == null) return
+        val mnemonic = mnemonicField.toCharArray()
+        val passphrase = if (hasPassphrase.value) passphraseField.toCharArray() else CharArray(0)
+        startSend(mnemonic, passphrase)
+    }
+
+    private fun startSend(mnemonic: CharArray?, passphrase: CharArray) {
+        val a = pendingAddress
+        val m = pendingAmount
+        if (a == null || m == null) return
+        _phase.value = SendPhase.SIGNING
+        _sendError.value = null
+        viewModelScope.launch {
+            try {
+                val txid = sendTransaction(a, m, mnemonic, passphrase)
+                clearSensitiveData()
+                _sendResult.value = txid
+            } catch (e: CancellationException) {
+                clearSensitiveData()
+                throw e
+            } catch (e: Exception) {
+                clearSensitiveData()
+                _sendError.value = e.message ?: "Send failed"
+                _phase.value = if (isReadOnly.value) SendPhase.MNEMONIC_PROMPT else SendPhase.ENTER_DETAILS
+            }
+        }
+    }
+
+    fun cancelMnemonicPrompt() {
+        clearSensitiveData()
+        _sendError.value = null
+        _phase.value = SendPhase.ENTER_DETAILS
+    }
+
+    fun clearSensitiveData() {
+        mnemonicField.wipe()
+        passphraseField.wipe()
+        pendingAddress = null
+        pendingAmount = null
+    }
+
+    fun onSendResultConsumed() {
+        _sendResult.value = null
+    }
+
+    override fun onCleared() {
+        clearSensitiveData()
+        super.onCleared()
     }
 }

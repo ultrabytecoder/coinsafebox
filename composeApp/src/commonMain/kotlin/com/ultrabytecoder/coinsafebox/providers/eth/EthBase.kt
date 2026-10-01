@@ -61,12 +61,12 @@ fun computeFeePresets(tipCap: Long, feeCap: Long): FeePresets {
 }
 
 abstract class EthBase(
-    protected val masterKey: DeterministicWallet.ExtendedPrivateKey,
+    protected val masterKey: DeterministicWallet.ExtendedPrivateKey?,
     protected val networkConfig: NetworkConfig
 ) {
 
     protected fun deriveEthKey(accountIndex: Long): DeterministicWallet.ExtendedPrivateKey {
-        return masterKey.derivePrivateKey(
+        return masterKey!!.derivePrivateKey(
             listOf(
                 DeterministicWallet.hardened(44),
                 DeterministicWallet.hardened(60),
@@ -81,7 +81,7 @@ abstract class EthBase(
         val segments = DerivationPathResolver.parsePath(path).map { (index, hardened) ->
             if (hardened) DeterministicWallet.hardened(index) else index
         }
-        return masterKey.derivePrivateKey(segments)
+        return masterKey!!.derivePrivateKey(segments)
     }
 
     protected fun ethAddressFromPublicKey(key: DeterministicWallet.ExtendedPrivateKey): String {

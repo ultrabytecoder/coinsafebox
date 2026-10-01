@@ -37,6 +37,9 @@ class FakeAccountRepository(
     override suspend fun updateParams(accountId: String, params: String) {}
     override suspend fun deleteAccount(id: String) {}
     override suspend fun deleteAccountsByWallet(walletId: Long) {}
+    override suspend fun getXpub(id: String): String? = null
+    override suspend fun updateXpub(id: String, xpub: String) {}
+    override suspend fun updateAddress(id: String, address: String) {}
 }
 
 class FakeTransactionRepository(

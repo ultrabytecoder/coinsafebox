@@ -6,7 +6,7 @@ import com.journeyapps.barcodescanner.ScanContract
 import com.journeyapps.barcodescanner.ScanOptions
 
 @Composable
-actual fun rememberQrScannerLauncher(onResult: (String?) -> Unit): () -> Unit {
+actual fun rememberQrScannerLauncher(onResult: (String?) -> Unit): (() -> Unit)? {
     val launcher = rememberLauncherForActivityResult(
         contract = ScanContract(),
         onResult = { result -> onResult(result.contents) }

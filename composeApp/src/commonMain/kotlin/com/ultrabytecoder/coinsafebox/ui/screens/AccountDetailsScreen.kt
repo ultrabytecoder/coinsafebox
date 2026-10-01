@@ -28,11 +28,12 @@ import compose.icons.FeatherIcons
 import compose.icons.feathericons.ArrowLeft
 import compose.icons.feathericons.Check
 import compose.icons.feathericons.Copy
-import io.github.goquati.qr.QrCode
+import com.ultrabytecoder.coinsafebox.util.QrEncoder
 import com.ultrabytecoder.coinsafebox.domain.model.AccountInfo
 import com.ultrabytecoder.coinsafebox.domain.model.AccountType
 import com.ultrabytecoder.coinsafebox.domain.model.TransactionInfo
 import com.ultrabytecoder.coinsafebox.navigation.Screen
+import com.ultrabytecoder.coinsafebox.ui.components.ReadOnlyBadge
 import com.ultrabytecoder.coinsafebox.ui.components.TransactionItem
 import com.ultrabytecoder.coinsafebox.ui.theme.AuroraPrimary
 import com.ultrabytecoder.coinsafebox.ui.viewmodel.AccountDetailsViewModel
@@ -51,16 +52,24 @@ fun AccountDetailsScreen(
     val error by viewModel.error.collectAsStateWithLifecycle()
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val selectedFiatBalance by viewModel.selectedFiatBalance.collectAsStateWithLifecycle()
+    val isReadOnly by viewModel.isReadOnly.collectAsStateWithLifecycle()
 
     Scaffold(
         topBar = {
             TopAppBar(
                 title = {
-                    Text(
-                        text = account?.name ?: "Account Details",
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Text(
+                            text = account?.name ?: "Account Details",
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f, fill = false)
+                        )
+                        if (isReadOnly) ReadOnlyBadge()
+                    }
                 },
                 navigationIcon = {
                     IconButton(onClick = { navController.popBackStack() }) {
@@ -320,7 +329,7 @@ private fun AddressSection(address: String) {
             )
             Spacer(modifier = Modifier.height(8.dp))
             val qrCode = remember(address) {
-                QrCode.encodeText(address, QrCode.Ecc.MEDIUM)
+                QrEncoder.encode(address)
             }
             Canvas(modifier = Modifier.size(140.dp)) {
                 drawRect(color = Color.White)

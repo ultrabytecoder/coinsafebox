@@ -36,12 +36,13 @@ class WalletRepository(private val databaseProvider: DatabaseProvider) : WalletR
         }
     }
 
-    override suspend fun insertWallet(name: String, masterSeed: ByteArray, mnemonic: ByteArray?): Long = withContext(Dispatchers.IO) {
+    override suspend fun insertWallet(name: String, masterSeed: ByteArray, mnemonic: ByteArray?, hasPassphrase: Boolean): Long = withContext(Dispatchers.IO) {
         queries.insertWallet(
             id = null,
             name = name,
             master_seed = SecretCipher.encrypt(masterSeed),
-            mnemonic = mnemonic?.let { SecretCipher.encrypt(it) }
+            mnemonic = mnemonic?.let { SecretCipher.encrypt(it) },
+            has_passphrase = if (hasPassphrase) 1L else 0L
         )
         queries.lastInsertRowId().executeAsOne()
     }
@@ -68,8 +69,31 @@ class WalletRepository(private val databaseProvider: DatabaseProvider) : WalletR
         }
     }
 
+    override suspend fun clearMasterKey(id: Long) {
+        withContext(Dispatchers.IO) {
+            queries.clearWalletMasterKey(id)
+        }
+    }
+
+    override suspend fun restoreMasterKey(id: Long, masterSeed: ByteArray, mnemonic: ByteArray?) {
+        withContext(Dispatchers.IO) {
+            try {
+                queries.restoreMasterKey(
+                    SecretCipher.encrypt(masterSeed),
+                    mnemonic?.let { SecretCipher.encrypt(it) },
+                    id
+                )
+            } finally {
+                masterSeed.wipe()
+                mnemonic?.wipe()
+            }
+        }
+    }
+
     private fun com.ultrabytecoder.coinsafebox.db.Wallets.toWalletInfo(): WalletInfo = WalletInfo(
         id = id,
-        name = name
+        name = name,
+        isReadOnly = (master_seed == null),
+        hasPassphrase = (has_passphrase != 0L)
     )
 }

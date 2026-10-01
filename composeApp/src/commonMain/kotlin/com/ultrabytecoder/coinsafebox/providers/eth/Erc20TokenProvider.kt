@@ -25,7 +25,7 @@ import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.longOrNull
 
 class Erc20TokenProvider(
-    masterKey: DeterministicWallet.ExtendedPrivateKey,
+    masterKey: DeterministicWallet.ExtendedPrivateKey?,
     private val accountRepository: AccountRepository,
     val params: JsonObject,
     networkConfig: NetworkConfig,
@@ -33,12 +33,18 @@ class Erc20TokenProvider(
     private val transactionRepository: TransactionRepository
 ) : EthBase(masterKey, networkConfig), Provider {
 
+    override val isReadOnly: Boolean get() = masterKey == null
+
     private val contractAddress: String = params["tokenAddress"]?.jsonPrimitive?.content
         ?: throw IllegalArgumentException("Missing tokenAddress in params")
 
     override suspend fun getAddress(accountId: String): String {
         val account = accountRepository.getAccount(accountId)
             ?: throw IllegalArgumentException("Account not found: $accountId")
+        if (masterKey == null) {
+            return account.address
+                ?: throw IllegalStateException("No address persisted for read-only account ${account.id}")
+        }
         val key = deriveEthKeyFromPath(account.derivationPath)
         return ethAddressFromPublicKey(key)
     }
@@ -179,6 +185,7 @@ class Erc20TokenProvider(
         accountId: String,
         feeParams: CustomFeeParams?
     ): String {
+        if (masterKey == null) throw ReadOnlyException()
         val decimals = fetchDecimals()
         val rawAmount = amount.multiply(BigDecimal.fromLong(10).pow(decimals)).toBigInteger()
         val addressBytes = ByteArray(32).also {

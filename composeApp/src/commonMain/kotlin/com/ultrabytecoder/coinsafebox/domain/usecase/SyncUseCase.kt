@@ -1,9 +1,11 @@
 package com.ultrabytecoder.coinsafebox.domain.usecase
 
 import com.ultrabytecoder.coinsafebox.data.NetworkConfig
+import com.ultrabytecoder.coinsafebox.domain.model.AccountType
 import com.ultrabytecoder.coinsafebox.domain.repository.AccountRepository
 import com.ultrabytecoder.coinsafebox.domain.repository.TransactionRepository
 import com.ultrabytecoder.coinsafebox.domain.repository.UtxoRepository
+import com.ultrabytecoder.coinsafebox.domain.repository.WalletRepository
 import com.ultrabytecoder.coinsafebox.domain.service.KeyProvider
 import com.ultrabytecoder.coinsafebox.providers.ProviderFactory
 import com.ultrabytecoder.coinsafebox.providers.SyncMode
@@ -18,7 +20,8 @@ class SyncUseCase(
     private val transactionRepository: TransactionRepository,
     private val keyProvider: KeyProvider,
     private val networkConfig: NetworkConfig,
-    private val syncManager: SyncManager
+    private val syncManager: SyncManager,
+    private val walletRepository: WalletRepository
 ) {
     operator fun invoke(scope: CoroutineScope, walletId: Long, syncMode: SyncMode = SyncMode.NORMAL) {
         scope.launch {
@@ -33,9 +36,16 @@ class SyncUseCase(
                         return@launch
                     }
                     try {
-                        keyProvider.withMasterSeed(account.walletId) { masterSeed ->
-                            val provider = ProviderFactory.create(account.type, masterSeed, utxoRepository, accountRepository, transactionRepository, networkConfig, account.params)
+                        val wallet = walletRepository.getWallet(account.walletId) ?: return@launch
+                        if (wallet.isReadOnly) {
+                            val xpub = if (account.type is AccountType.Btc) accountRepository.getXpub(account.id) else null
+                            val provider = ProviderFactory.createReadOnly(account.type, xpub, utxoRepository, accountRepository, transactionRepository, networkConfig, account.params)
                             provider.sync(account.id, syncMode)
+                        } else {
+                            keyProvider.withMasterSeed(account.walletId) { masterSeed ->
+                                val provider = ProviderFactory.create(account.type, masterSeed, utxoRepository, accountRepository, transactionRepository, networkConfig, account.params)
+                                provider.sync(account.id, syncMode)
+                            }
                         }
                     } catch (e: CancellationException) {
                         // Propagate cancellation — never treat a cancelled sync as a

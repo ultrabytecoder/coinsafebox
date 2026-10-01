@@ -22,6 +22,7 @@ Design notes (learned the hard way):
     over hard-coded X,Y. The 1080x2400 coords seen in logs are only for
     manual debugging.
 """
+import html
 import os
 import re
 import subprocess
@@ -109,7 +110,9 @@ def nodes(xml=None):
 
         def g(attr):
             mm = re.search(attr + r'="([^"]*)"', t)
-            return mm.group(1) if mm else ""
+            # uiautomator XML-escapes attribute values (& -> &amp; etc.);
+            # unescape so label matches like "Sign & Send" work.
+            return html.unescape(mm.group(1)) if mm else ""
 
         bnd = g("bounds")
         cx = cy = None
@@ -157,6 +160,28 @@ def find_by_text(pred, xml=None):
     return None
 
 
+def button_enabled(label, exact=True, xml=None):
+    """Return the `enabled` state of the clickable node nearest `label`, or None.
+
+    Compose renders a button's visible text in a child TextView; the clickable
+    Button wrapper (the node carrying `enabled="false"` when disabled) is the
+    clickable node whose centre sits closest to the label's centre. Use this to
+    assert a Send button is disabled/enabled. Returns None if the label or no
+    clickable node is found (caller should treat that as "could not determine").
+    """
+    xml = xml or dump()
+    ns = nodes(xml)
+    labels = [n for n in ns if _match(n, label, exact) and n["cy"] is not None]
+    if not labels:
+        return None
+    label_node = max(labels, key=lambda n: n["cy"])  # bottom-most (the button, not a title)
+    clickable = [n for n in ns if n["clickable"] and n["cy"] is not None]
+    if not clickable:
+        return None
+    btn = min(clickable, key=lambda n: abs(n["cy"] - label_node["cy"]))
+    return btn["enabled"]
+
+
 def wait_for(label, timeout=60, exact=False, interval=2.0):
     """Poll until a node matching `label` appears (fresh dump per poll).
 
@@ -194,6 +219,17 @@ def tap_text(label, timeout=20, exact=False):
     return tap_node(n)
 
 
+def tap_text_bottom(label, timeout=20, exact=True):
+    """Tap the LOWEST node matching `label` (a bottom button, not a top-bar
+    title that reuses the same text)."""
+    if wait_for(label, timeout=timeout, exact=exact) is None:
+        raise RuntimeError(f"node not found within {timeout}s: '{label}'")
+    cands = [n for n in nodes() if _match(n, label, exact) and n["cy"] is not None]
+    if not cands:
+        raise RuntimeError(f"no tappable candidates for {label!r}")
+    return tap_node(max(cands, key=lambda n: n["cy"]))
+
+
 def tap_digit(d):
     """Tap an on-screen numpad digit (exact text/desc match)."""
     n = find(str(d), exact=True)
@@ -201,6 +237,192 @@ def tap_digit(d):
         raise RuntimeError(f"numpad digit {d} not found")
     tap_node(n)
     time.sleep(0.25)
+
+
+def _key_node(labels, xml=None):
+    """Locate one app-keyboard key.
+
+    KeyboardKey merges its children and exposes the label as content-desc,
+    so a key is the node whose text or desc EQUALS one of `labels` (keys
+    with a dedicated description, like the decimal point, pass it as an
+    alias). The keyboard sits at the bottom of the screen, so if a UI
+    label happens to match, the lowest candidate wins.
+    """
+    cands = [n for n in nodes(xml)
+             if n["cx"] is not None and (n["text"] in labels or n["desc"] in labels)]
+    if not cands:
+        return None
+    return max(cands, key=lambda n: n["cy"])
+
+
+# Keys whose content-desc differs from the visible label.
+_KEY_ALIASES = {
+    " ": (" ", "Space"),
+    ".": (".", "Decimal point"),
+}
+
+
+def type_onscreen(text, settle=0.15):
+    """Type `text` on the app's on-screen keyboard (Qwerty or numeric numpad).
+
+    The keyboard must already be visible — tap the target field first
+    (see tap_field_below). `adb input text` cannot reach these fields
+    (they are deliberately out of the IME focus chain), but the keyboard
+    keys are tappable nodes. ONE dump: each distinct key is located once,
+    then keys are tapped in sequence. Space uses the key with desc "Space".
+    """
+    xml = dump()
+    keys = {}
+    for ch in dict.fromkeys(text):
+        n = _key_node(_KEY_ALIASES.get(ch, (ch,)), xml)
+        if n is None:
+            raise RuntimeError(f"keyboard key {ch!r} not found (keyboard visible?)")
+        keys[ch] = n
+    for ch in text:
+        tap(keys[ch]["cx"], keys[ch]["cy"], settle=settle)
+
+
+def tap_field_below(label, xml=None):
+    """Tap the wide clickable field box rendered directly under a label.
+
+    SecureOutlinedTextField renders its label as a separate Text above a
+    text-less clickable box, so `tap_text(label)` misses the field. Pick
+    the clickable, wide node whose top edge sits just below the label.
+    """
+    xml = xml or dump()
+    ns = nodes(xml)
+    lab = next((n for n in ns if n["text"] == label and n["cy"] is not None), None)
+    if lab is None:
+        raise RuntimeError(f"label {label!r} not found")
+    m = re.match(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", lab["bounds"])
+    lab_bottom = int(m.group(4)) if m else lab["cy"]
+    best, best_dist = None, None
+    for n in ns:
+        if not n["clickable"] or n["cx"] is None:
+            continue
+        mb = re.match(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", n["bounds"])
+        if not mb:
+            continue
+        x1, y1, x2, y2 = map(int, mb.groups())
+        h, w = y2 - y1, x2 - x1
+        # field box: wide, tall enough to be a text field, top just below label
+        if w < 400 or h < 60 or y1 < lab_bottom:
+            continue
+        dist = y1 - lab_bottom
+        if dist > 150:
+            continue
+        if best_dist is None or dist < best_dist:
+            best, best_dist = n, dist
+    if best is None:
+        raise RuntimeError(f"no field found below label {label!r}")
+    return tap_node(best)
+
+
+GBOARD = "com.google.android.inputmethod.latin/com.android.inputmethod.latin.LatinIME"
+GBOARD_PKG = "com.google.android.inputmethod.latin"
+
+
+def ime_disable():
+    """Disable Gboard on the device.
+
+    REQUIRED before typing into system-IME fields on this AVD. Root cause
+    (found by experiment): while Gboard's IME window is on screen — even
+    after `ime disable`, because the stale window lingers with a full-screen
+    touchable region — the app IGNORES injected character input (`input
+    text` / letter `input keyevent`): the dialog's input channel acks the
+    events (responsive=true) but Compose drops them while an IME is active.
+    DEL / MOVE_END are hit-or-miss in the same state. With no IME window
+    present, character keys reach the field directly and 100% reliably
+    (verified: full strings incl. spaces, uppercase, in dialogs).
+
+    This disables the IME AND force-stops its process so any stale IME
+    window is destroyed. Call once at test start, and ime_enable() in a
+    finally block at the end. For extra safety ime_set_text() re-checks
+    before every typing round (ensure_no_ime_window).
+    """
+    adb("shell", "ime", "disable", GBOARD)
+    adb("shell", "am", "force-stop", GBOARD_PKG)
+    time.sleep(1.5)
+
+
+def ime_enable():
+    """Re-enable Gboard (undo ime_disable)."""
+    adb("shell", "ime", "enable", GBOARD)
+    time.sleep(1.0)
+
+
+def ime_window_onscreen():
+    """True if an InputMethod window is currently on screen."""
+    lines = adb("shell", "dumpsys", "window", "windows").stdout.splitlines()
+    for i, line in enumerate(lines):
+        if "u0 InputMethod" not in line or not line.startswith("  Window"):
+            continue
+        blk = lines[i:i + 45]
+        for l in blk[1:]:
+            if l.startswith("  Window "):
+                break
+        return any("isOnScreen=true" in l for l in blk)
+    return False
+
+
+def ensure_no_ime_window(max_rounds=3):
+    """Force-stop the IME process until no IME window is on screen.
+
+    A disabled Gboard can still leave its window on screen (stale from an
+    earlier field focus); while it is up, the app ignores injected
+    character input and taps inside its (full-screen) touchable region.
+    `ime hide` does NOT clear it — only killing the process does.
+    """
+    for _ in range(max_rounds):
+        if not ime_window_onscreen():
+            return
+        adb("shell", "am", "force-stop", GBOARD_PKG)
+        time.sleep(1.5)
+
+
+def find_edittext(xml=None):
+    """First EditText node in the dump (a system-IME text field), or None."""
+    for n in nodes(xml):
+        if n["cls"] == "EditText":
+            return n
+    return None
+
+
+def tap_edittext(settle=1.0):
+    """Tap the on-screen EditText to focus it (system IME field)."""
+    n = find_edittext()
+    if n is None or n["cx"] is None:
+        raise RuntimeError("no EditText found on screen")
+    tap(n["cx"], n["cy"], settle)
+    return n
+
+
+def ime_type(text):
+    """Type `text` into the FOCUSED system-IME field via `input text`.
+
+    ime_disable() must have been called first (see its docstring).
+    Spaces need the %s escape (input command syntax).
+    """
+    adb("shell", "input", "text", text.replace(" ", "%s"))
+    time.sleep(1.0)
+
+
+def ime_set_text(text, clear_count=24):
+    """Focus the on-screen system-IME field, clear it, and type `text`.
+
+    ime_disable() must have been called first. clear_count DELs covers the
+    prefilled value (default 'My wallet'). The field must be the only
+    EditText on screen (setup screen / rename dialog are). Focusing the
+    field can bring an IME window back on screen, so it is killed again
+    (ensure_no_ime_window) before typing.
+    """
+    tap_edittext(settle=1.5)
+    ensure_no_ime_window()
+    adb("shell", "input", "keyevent", "KEYCODE_MOVE_END")
+    for _ in range(clear_count):
+        adb("shell", "input", "keyevent", "KEYCODE_DEL")
+        time.sleep(0.05)
+    ime_type(text)
 
 
 def enter_pin(pin):

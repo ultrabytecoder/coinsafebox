@@ -29,7 +29,7 @@ import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.longOrNull
 
 class EthProvider(
-    masterKey: DeterministicWallet.ExtendedPrivateKey,
+    masterKey: DeterministicWallet.ExtendedPrivateKey?,
     private val accountRepository: AccountRepository,
     val params: JsonObject,
     networkConfig: NetworkConfig,
@@ -37,9 +37,15 @@ class EthProvider(
     private val transactionRepository: TransactionRepository
 ) : EthBase(masterKey, networkConfig), Provider {
 
+    override val isReadOnly: Boolean get() = masterKey == null
+
     override suspend fun getAddress(accountId: String): String {
         val account = accountRepository.getAccount(accountId)
             ?: throw IllegalArgumentException("Account not found: $accountId")
+        if (masterKey == null) {
+            return account.address
+                ?: throw IllegalStateException("No address persisted for read-only account ${account.id}")
+        }
         val key = deriveEthKeyFromPath(account.derivationPath)
         return ethAddressFromPublicKey(key)
     }
@@ -179,6 +185,7 @@ class EthProvider(
         accountId: String,
         feeParams: CustomFeeParams?
     ): String {
+        if (masterKey == null) throw ReadOnlyException()
         val weiAmountBD = amount.multiply(BigDecimal.fromLong(1_000_000_000_000_000_000))
         if (weiAmountBD > BigDecimal.fromLong(Long.MAX_VALUE)) {
             throw IllegalArgumentException("Amount exceeds maximum representable wei value")

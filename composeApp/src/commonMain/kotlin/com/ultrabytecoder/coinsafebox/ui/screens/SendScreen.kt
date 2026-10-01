@@ -12,6 +12,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
 import compose.icons.FeatherIcons
+import compose.icons.feathericons.AlertTriangle
 import compose.icons.feathericons.ArrowLeft
 import compose.icons.feathericons.Camera
 import com.ionspin.kotlin.bignum.decimal.BigDecimal
@@ -22,6 +23,8 @@ import com.ultrabytecoder.coinsafebox.ui.theme.AuroraPrimary
 import com.ultrabytecoder.coinsafebox.domain.model.CustomFeeParams
 import com.ultrabytecoder.coinsafebox.domain.model.FeeEstimation
 import com.ultrabytecoder.coinsafebox.domain.model.FeePresets
+import com.ultrabytecoder.coinsafebox.ui.util.BalanceSufficiency
+import com.ultrabytecoder.coinsafebox.ui.util.evaluateBalanceSufficiency
 import com.ultrabytecoder.coinsafebox.ui.util.formatFeeChipRate
 import com.ultrabytecoder.coinsafebox.ui.util.formatFeeDetail
 import com.ultrabytecoder.coinsafebox.ui.util.formatFiat
@@ -35,6 +38,7 @@ import com.ultrabytecoder.coinsafebox.ui.keyboard.state.LocalKeyboardController
 import com.ultrabytecoder.coinsafebox.ui.keyboard.state.MutableStateTarget
 import com.ultrabytecoder.coinsafebox.ui.keyboard.state.rememberKeyboardController
 import com.ultrabytecoder.coinsafebox.ui.viewmodel.FeeSelectionMode
+import com.ultrabytecoder.coinsafebox.ui.viewmodel.SendPhase
 import com.ultrabytecoder.coinsafebox.ui.viewmodel.SendViewModel
 
 /**
@@ -66,9 +70,14 @@ fun SendScreen(
     val customEthMaxFee by viewModel.customEthMaxFee.collectAsState()
     val customTrc20FeeLimit by viewModel.customTrc20FeeLimit.collectAsState()
     val validationError by viewModel.validationError.collectAsState()
+    val phase by viewModel.phase.collectAsState()
+    val hasPassphrase by viewModel.hasPassphrase.collectAsState()
+    val isReadOnly by viewModel.isReadOnly.collectAsState()
+    val sendError by viewModel.sendError.collectAsState()
+    val sendResult by viewModel.sendResult.collectAsState()
     var address by remember { mutableStateOf("") }
     var amount by remember { mutableStateOf("") }
-    var isLoading by remember { mutableStateOf(false) }
+    val signing = phase == SendPhase.SIGNING
     var btcFeeText by remember { mutableStateOf(customBtcFeeRate.toString()) }
     var ethPriorityText by remember { mutableStateOf(formatGwei(customEthPriorityFee)) }
     var ethMaxFeeText by remember { mutableStateOf(formatGwei(customEthMaxFee)) }
@@ -109,6 +118,18 @@ fun SendScreen(
         MutableStateTarget(
             getter = { trc20FeeText },
             setter = { trc20FeeText = it; viewModel.setCustomTrc20FeeLimit(it.toLongOrNull() ?: 0L) }
+        )
+    }
+    val mnemonicTarget = remember {
+        MutableStateTarget(
+            getter = { viewModel.mnemonicField.text },
+            setter = { viewModel.mnemonicField.update(it) }
+        )
+    }
+    val passphraseTarget = remember {
+        MutableStateTarget(
+            getter = { viewModel.passphraseField.text },
+            setter = { viewModel.passphraseField.update(it) }
         )
     }
     val keyboardController = rememberKeyboardController()
@@ -152,6 +173,22 @@ fun SendScreen(
     // Re-read the fiat currency selection when (re)entering the screen.
     LaunchedEffect(Unit) { viewModel.refreshFiatCurrency() }
 
+    // Navigate once a send (full or read-only) has succeeded.
+    LaunchedEffect(sendResult) {
+        val txid = sendResult
+        if (txid != null) {
+            viewModel.onSendResultConsumed()
+            navController.navigate(Screen.TransactionSent(txid)) {
+                popUpTo(Screen.AccountsList::class) { inclusive = false }
+            }
+        }
+    }
+
+    // Deterministic wipe of the mnemonic/passphrase buffers when leaving the screen.
+    DisposableEffect(Unit) {
+        onDispose { viewModel.clearSensitiveData() }
+    }
+
     LaunchedEffect(amount, address, selectedFeeMode, btcFeeText, ethPriorityText, ethMaxFeeText, trc20FeeText) {
         if (amount.isNotBlank()) {
             try {
@@ -189,13 +226,32 @@ fun SendScreen(
         parsedAmount.add(feeVal.totalCost)
     } else null
 
+    // Pre-emptive, non-blocking warning for when the balance can't cover the send.
+    // A pure derivation of already-collected state (mirrors how `total` is computed
+    // above); the native/token comparison rules live in evaluateBalanceSufficiency.
+    val balanceSufficiency = evaluateBalanceSufficiency(
+        balanceRaw = accountVal!!.amount,
+        parsedAmount = parsedAmount,
+        feeEstimation = fee,
+        isTokenAccount = isTokenAccount
+    )
+
+    // Hard block (disabled Send button) for full wallets when the balance can't
+    // cover the send. Read-only wallets stay enabled so the recovery-phrase guard
+    // remains reachable; it is verified before any on-chain operation.
+    val sendEnabled = !signing &&
+        (isReadOnly || balanceSufficiency == BalanceSufficiency.Sufficient)
+
     CompositionLocalProvider(LocalKeyboardController provides keyboardController) {
         Scaffold(
             topBar = {
                 TopAppBar(
                     title = { Text("Send") },
                     navigationIcon = {
-                        IconButton(onClick = { navController.popBackStack() }) {
+                        IconButton(onClick = {
+                            if (phase == SendPhase.MNEMONIC_PROMPT) viewModel.cancelMnemonicPrompt()
+                            else navController.popBackStack()
+                        }) {
                             Icon(FeatherIcons.ArrowLeft, contentDescription = "Back")
                         }
                     },
@@ -217,6 +273,16 @@ fun SendScreen(
                         .padding(16.dp),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
+                    if (phase == SendPhase.MNEMONIC_PROMPT) {
+                        MnemonicSendPromptCard(
+                            mnemonicTarget = mnemonicTarget,
+                            showPassphrase = hasPassphrase,
+                            passphraseTarget = passphraseTarget,
+                            errorText = sendError,
+                            onSignAndSend = { viewModel.confirmSend() },
+                            onCancel = { viewModel.cancelMnemonicPrompt() }
+                        )
+                    } else {
                     Card(
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(20.dp),
@@ -242,6 +308,16 @@ fun SendScreen(
                         }
                     }
 
+                    // Placed right under the balance (not at the bottom of the form)
+                    // so the warning is always in view and visually tied to the
+                    // balance it refers to.
+                    if (balanceSufficiency != BalanceSufficiency.Sufficient) {
+                        Spacer(modifier = Modifier.height(12.dp))
+                        InsufficientBalanceBanner(
+                            message = insufficientBalanceMessage(accountVal!!.symbol, balanceSufficiency)
+                        )
+                    }
+
                     Spacer(modifier = Modifier.height(24.dp))
 
                     Row(
@@ -260,16 +336,18 @@ fun SendScreen(
                             modifier = Modifier.weight(1f),
                             shape = RoundedCornerShape(16.dp)
                         )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        IconButton(
-                            onClick = { launchScanner() },
-                            modifier = Modifier.size(48.dp)
-                        ) {
-                            Icon(
-                                FeatherIcons.Camera,
-                                contentDescription = "Scan QR",
-                                modifier = Modifier.size(24.dp)
-                            )
+                        if (launchScanner != null) {
+                            Spacer(modifier = Modifier.width(8.dp))
+                            IconButton(
+                                onClick = { launchScanner() },
+                                modifier = Modifier.size(48.dp)
+                            ) {
+                                Icon(
+                                    FeatherIcons.Camera,
+                                    contentDescription = "Scan QR",
+                                    modifier = Modifier.size(24.dp)
+                                )
+                            }
                         }
                     }
 
@@ -403,57 +481,77 @@ fun SendScreen(
                             style = MaterialTheme.typography.bodySmall
                         )
                     }
+                    }
                 }
 
-                // Send button pinned at bottom
+                // Send / mnemonic controls pinned at bottom
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(16.dp)
                 ) {
-                    Button(
-                        onClick = {
-                            if (address.isNotBlank() && amount.isNotBlank()) {
-                                // Validate custom fee before sending
-                                if (selectedFeeMode is FeeSelectionMode.Custom && !viewModel.validateCustomFee()) {
-                                    scope.launch {
-                                        snackbarHostState.showSnackbar("Please fix fee values")
-                                    }
-                                    return@Button
-                                }
-                                isLoading = true
-                                scope.launch {
-                                    try {
-                                        val txid = viewModel.sendTransaction(address, BigDecimal.parseString(amount))
-                                        isLoading = false
-                                        navController.navigate(Screen.TransactionSent(txid)) {
-                                            popUpTo(Screen.AccountsList::class) { inclusive = false }
-                                        }
-                                    } catch (e: kotlinx.coroutines.CancellationException) {
-                                        throw e
-                                    } catch (e: Exception) {
-                                        isLoading = false
-                                        snackbarHostState.showSnackbar("Failed: ${e.message}")
-                                    }
-                                }
-                            } else {
-                                scope.launch {
-                                    snackbarHostState.showSnackbar("Please fill in all fields")
+                    if (phase == SendPhase.MNEMONIC_PROMPT) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            OutlinedButton(
+                                onClick = { viewModel.cancelMnemonicPrompt() },
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .height(56.dp),
+                                enabled = !signing
+                            ) {
+                                Text("Cancel")
+                            }
+                            Button(
+                                onClick = { viewModel.confirmSend() },
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .height(56.dp),
+                                enabled = !signing
+                            ) {
+                                if (signing) {
+                                    CircularProgressIndicator(
+                                        modifier = Modifier.size(24.dp),
+                                        color = MaterialTheme.colorScheme.onPrimary
+                                    )
+                                } else {
+                                    Text("Sign & Send")
                                 }
                             }
-                        },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(56.dp),
-                        enabled = !isLoading
-                    ) {
-                        if (isLoading) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(24.dp),
-                                color = MaterialTheme.colorScheme.onPrimary
-                            )
-                        } else {
-                            Text("Send")
+                        }
+                    } else {
+                        Button(
+                            onClick = {
+                                if (address.isNotBlank() && amount.isNotBlank()) {
+                                    // Validate custom fee before sending
+                                    if (selectedFeeMode is FeeSelectionMode.Custom && !viewModel.validateCustomFee()) {
+                                        scope.launch {
+                                            snackbarHostState.showSnackbar("Please fix fee values")
+                                        }
+                                        return@Button
+                                    }
+                                    viewModel.requestSend(address, BigDecimal.parseString(amount))
+                                } else {
+                                    scope.launch {
+                                        snackbarHostState.showSnackbar("Please fill in all fields")
+                                    }
+                                }
+                            },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(56.dp),
+                            enabled = sendEnabled
+                        ) {
+                            if (signing) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(24.dp),
+                                    color = MaterialTheme.colorScheme.onPrimary
+                                )
+                            } else {
+                                Text("Send")
+                            }
                         }
                     }
                 }
@@ -662,6 +760,138 @@ private fun FeeSelector(
             style = MaterialTheme.typography.labelSmall,
             color = if (autoFeeFallback) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant
         )
+    }
+}
+
+@Composable
+private fun MnemonicSendPromptCard(
+    mnemonicTarget: KeyboardTarget,
+    showPassphrase: Boolean,
+    passphraseTarget: KeyboardTarget,
+    errorText: String?,
+    onSignAndSend: () -> Unit,
+    onCancel: () -> Unit
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(20.dp),
+        border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.15f)),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            horizontalAlignment = Alignment.Start
+        ) {
+            Text(
+                text = "Recovery Phrase Required",
+                style = MaterialTheme.typography.titleMedium
+            )
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                text = "This wallet is read-only. Enter your recovery phrase to sign and send. It is wiped immediately after use.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Spacer(modifier = Modifier.height(16.dp))
+            SecureOutlinedTextField(
+                target = mnemonicTarget,
+                label = { Text("Recovery Phrase") },
+                placeholder = { Text("your twelve or twenty-four word phrase") },
+                layoutType = KeyboardLayoutType.Qwerty,
+                masked = false,
+                singleLine = false,
+                maxLines = 4,
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(16.dp)
+            )
+            if (showPassphrase) {
+                Spacer(modifier = Modifier.height(12.dp))
+                SecureOutlinedTextField(
+                    target = passphraseTarget,
+                    label = { Text("Passphrase") },
+                    layoutType = KeyboardLayoutType.Qwerty,
+                    masked = true,
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(16.dp)
+                )
+            }
+            if (errorText != null) {
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = errorText,
+                    color = MaterialTheme.colorScheme.error,
+                    style = MaterialTheme.typography.bodySmall
+                )
+            }
+            Spacer(modifier = Modifier.height(16.dp))
+            Button(
+                onClick = onSignAndSend,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("Sign & Send")
+            }
+            Spacer(modifier = Modifier.height(8.dp))
+            TextButton(onClick = onCancel, modifier = Modifier.fillMaxWidth()) {
+                Text("Cancel")
+            }
+        }
+    }
+}
+
+/**
+ * Human-readable warning copy for an insufficient-balance result. The token
+ * variant deliberately never mentions the network fee, because for token
+ * accounts the fee is paid in the parent native coin and is not verified here.
+ */
+private fun insufficientBalanceMessage(symbol: String, result: BalanceSufficiency): String =
+    when (result) {
+        BalanceSufficiency.InsufficientTokenBalance ->
+            "Insufficient $symbol balance to send this amount."
+        BalanceSufficiency.InsufficientNative ->
+            "Insufficient $symbol balance for the amount plus network fee."
+        BalanceSufficiency.InsufficientNativePendingFee ->
+            "Insufficient $symbol balance. The network fee is still estimating, so the required amount may be higher."
+        BalanceSufficiency.Sufficient -> ""
+    }
+
+/**
+ * Prominent, non-blocking warning shown when the balance can't cover the send.
+ * It informs the user up front; the on-chain/provider send guards remain the
+ * authoritative check, so the banner does not itself disable the Send button.
+ */
+@Composable
+private fun InsufficientBalanceBanner(
+    message: String,
+    modifier: Modifier = Modifier
+) {
+    Card(
+        modifier = modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.errorContainer,
+            contentColor = MaterialTheme.colorScheme.onErrorContainer
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                imageVector = FeatherIcons.AlertTriangle,
+                contentDescription = null,
+                modifier = Modifier.size(18.dp)
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Text(
+                text = message,
+                style = MaterialTheme.typography.bodyMedium
+            )
+        }
     }
 }
 

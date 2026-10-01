@@ -41,7 +41,7 @@ class CreateWalletUseCase(
             seed = derived.first
             mnemonicBytes = derived.second
 
-            walletRepository.insertWallet(name, seed, mnemonicBytes)
+            walletRepository.insertWallet(name, seed, mnemonicBytes, passphrase.isNotEmpty())
         } finally {
             seed?.wipe()
             mnemonicBytes?.wipe()

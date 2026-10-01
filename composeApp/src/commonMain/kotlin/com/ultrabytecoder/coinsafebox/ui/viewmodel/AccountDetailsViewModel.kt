@@ -10,6 +10,7 @@ import com.ultrabytecoder.coinsafebox.domain.model.TransactionInfo
 import com.ultrabytecoder.coinsafebox.domain.provider.FiatQuoteProvider
 import com.ultrabytecoder.coinsafebox.domain.repository.AccountRepository
 import com.ultrabytecoder.coinsafebox.domain.repository.TransactionRepository
+import com.ultrabytecoder.coinsafebox.domain.repository.WalletRepository
 import com.ultrabytecoder.coinsafebox.domain.usecase.GetAccountAddressUseCase
 import com.ultrabytecoder.coinsafebox.domain.usecase.GetAccountsUseCase
 import com.ultrabytecoder.coinsafebox.ui.util.formatFiat
@@ -41,12 +42,16 @@ class AccountDetailsViewModel(
     private val getAccountAddress: GetAccountAddressUseCase,
     private val accountRepository: AccountRepository,
     private val transactionRepository: TransactionRepository,
+    private val walletRepository: WalletRepository,
     settingsStorage: SettingsStorage,
     private val quoteProvider: FiatQuoteProvider
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(AccountDetailUiState())
     val uiState: StateFlow<AccountDetailUiState> = _uiState.asStateFlow()
+
+    private val _isReadOnly = MutableStateFlow(false)
+    val isReadOnly: StateFlow<Boolean> = _isReadOnly.asStateFlow()
 
     // Legacy flows for backward compat
     val account: StateFlow<AccountInfo?> = _uiState.map { it.parent }.stateIn(viewModelScope, SharingStarted.Lazily, null)
@@ -95,6 +100,7 @@ class AccountDetailsViewModel(
                     selectedAccount = selected,
                     address = addr
                 )
+                _isReadOnly.value = walletRepository.getWallet(parent.walletId)?.isReadOnly ?: false
                 loadTransactions(selected.id)
             } catch (e: Exception) {
                 _uiState.value = _uiState.value.copy(error = e.message ?: "Failed to load account details")

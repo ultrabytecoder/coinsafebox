@@ -11,6 +11,7 @@ import com.ultrabytecoder.coinsafebox.domain.model.TransactionStatus
 import com.ultrabytecoder.coinsafebox.domain.repository.AccountRepository
 import com.ultrabytecoder.coinsafebox.domain.repository.TransactionRepository
 import com.ultrabytecoder.coinsafebox.providers.Provider
+import com.ultrabytecoder.coinsafebox.providers.ReadOnlyException
 import com.ultrabytecoder.coinsafebox.providers.SyncMode
 import com.ultrabytecoder.coinsafebox.providers.ton.address.TonAddress
 import com.ultrabytecoder.coinsafebox.providers.ton.boc.*
@@ -35,7 +36,7 @@ import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.longOrNull
 
 class TonProvider(
-    masterSeed: ByteArray,
+    masterSeed: ByteArray?,
     private val accountRepository: AccountRepository,
     val params: JsonObject,
     networkConfig: NetworkConfig,
@@ -43,9 +44,22 @@ class TonProvider(
     private val createClient: () -> HttpClient = { HttpClient() }
 ) : TonBase(masterSeed, networkConfig), Provider {
 
+    companion object {
+        // Read-only (key-free) fee fallback: a safe OVERESTIMATE. seqno == 0 means the
+        // wallet is not yet deployed (carries StateInit); otherwise a deployed wallet.
+        private const val RO_FEE_DEPLOY_NANOTONS = 50_000_000L   // 0.05 TON
+        private const val RO_FEE_TRANSFER_NANOTONS = 15_000_000L // 0.015 TON
+    }
+
+    override val isReadOnly: Boolean get() = masterSeed == null
+
     override suspend fun getAddress(accountId: String): String {
         val account = accountRepository.getAccount(accountId)
             ?: throw IllegalArgumentException("Account not found: $accountId")
+        if (masterSeed == null) {
+            return account.address
+                ?: throw IllegalStateException("No address persisted for read-only account ${account.id}")
+        }
         val keyPair = deriveTonKeyFromPath(account.derivationPath)
         val version = TonBase.parseWalletVersion(params)
         return tonAddressFromPublicKey(keyPair.publicKey, version)
@@ -78,6 +92,21 @@ class TonProvider(
         recipientAddress: String?,
         feeParams: CustomFeeParams?
     ): FeeEstimation {
+        if (masterSeed == null) {
+            val roAccount = accountRepository.getAccount(accountId)
+                ?: throw IllegalArgumentException("Account not found: $accountId")
+            val roAddress = roAccount.address
+                ?: throw IllegalStateException("No address persisted for read-only account ${roAccount.id}")
+            val roClient = createClient()
+            try {
+                val roSeqno = tonGetSeqno(roClient, roAddress)
+                val roFeeNanotons = if (roSeqno == 0) RO_FEE_DEPLOY_NANOTONS else RO_FEE_TRANSFER_NANOTONS
+                val roTotalCost = BigDecimal.fromLong(roFeeNanotons).divide(BigDecimal.fromLong(networkConfig.tonNanotonsPerTon))
+                return FeeEstimation(roTotalCost, null)
+            } finally {
+                roClient.close()
+            }
+        }
         val nanotons = amount.multiply(BigDecimal.fromLong(networkConfig.tonNanotonsPerTon)).longValue(exactRequired = false)
         val account = accountRepository.getAccount(accountId)
             ?: throw IllegalArgumentException("Account not found: $accountId")
@@ -171,6 +200,7 @@ class TonProvider(
         accountId: String,
         feeParams: CustomFeeParams?
     ): String {
+        if (masterSeed == null) throw ReadOnlyException()
         val nanotons = amount.multiply(BigDecimal.fromLong(networkConfig.tonNanotonsPerTon)).longValue(exactRequired = false)
         val account = accountRepository.getAccount(accountId)
             ?: throw IllegalArgumentException("Account not found: $accountId")
