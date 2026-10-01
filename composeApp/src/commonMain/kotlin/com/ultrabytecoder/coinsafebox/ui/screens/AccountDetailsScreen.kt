@@ -28,7 +28,7 @@ import compose.icons.FeatherIcons
 import compose.icons.feathericons.ArrowLeft
 import compose.icons.feathericons.Check
 import compose.icons.feathericons.Copy
-import io.github.goquati.qr.QrCode
+import com.ultrabytecoder.coinsafebox.util.QrEncoder
 import com.ultrabytecoder.coinsafebox.domain.model.AccountInfo
 import com.ultrabytecoder.coinsafebox.domain.model.AccountType
 import com.ultrabytecoder.coinsafebox.domain.model.TransactionInfo
@@ -329,7 +329,7 @@ private fun AddressSection(address: String) {
             )
             Spacer(modifier = Modifier.height(8.dp))
             val qrCode = remember(address) {
-                QrCode.encodeText(address, QrCode.Ecc.MEDIUM)
+                QrEncoder.encode(address)
             }
             Canvas(modifier = Modifier.size(140.dp)) {
                 drawRect(color = Color.White)

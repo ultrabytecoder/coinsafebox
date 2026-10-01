@@ -115,6 +115,13 @@ kotlin {
         named("androidMain") { dependsOn(jvmMain) }
         named("androidUnitTest") { dependsOn(jvmTest) }
 
+        // QR generation on the shared JVM source set (desktop + Android) uses ZXing
+        // (Java 8 bytecode). The goquati:qr JVM artifact targets class 65 (Java 21),
+        // which a Java 17 runtime cannot load, so it is confined to iosMain instead.
+        jvmMain.dependencies {
+            implementation(libs.zxing.core)
+        }
+
         androidMain.dependencies {
             implementation(libs.compose.uiToolingPreview)
             implementation(libs.androidx.activity.compose)
@@ -162,9 +169,6 @@ kotlin {
             // Multiplatform Icons (replacement for androidx.compose.material.icons)
             implementation("br.com.devsrsouza.compose.icons:feather:1.1.1")
 
-            // QR Code generation
-            implementation(libs.qr)
-
             // Date/time and human-readable formatting
             implementation(libs.kotlinx.datetime)
             implementation(libs.human.readable)
@@ -183,6 +187,9 @@ kotlin {
             implementation(libs.sqldelight.native.driver)
             implementation(libs.yet300.sqlcipher.driver)
             implementation(libs.ktor.client.darwin)
+            // QR generation on iOS uses goquati:qr (native; the JVM artifact is
+            // avoided because it targets class 65 and breaks a Java 17 runtime).
+            implementation(libs.qr)
         }
 
         val desktopJniTarget = when {

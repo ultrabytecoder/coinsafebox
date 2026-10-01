@@ -336,16 +336,18 @@ fun SendScreen(
                             modifier = Modifier.weight(1f),
                             shape = RoundedCornerShape(16.dp)
                         )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        IconButton(
-                            onClick = { launchScanner() },
-                            modifier = Modifier.size(48.dp)
-                        ) {
-                            Icon(
-                                FeatherIcons.Camera,
-                                contentDescription = "Scan QR",
-                                modifier = Modifier.size(24.dp)
-                            )
+                        if (launchScanner != null) {
+                            Spacer(modifier = Modifier.width(8.dp))
+                            IconButton(
+                                onClick = { launchScanner() },
+                                modifier = Modifier.size(48.dp)
+                            ) {
+                                Icon(
+                                    FeatherIcons.Camera,
+                                    contentDescription = "Scan QR",
+                                    modifier = Modifier.size(24.dp)
+                                )
+                            }
                         }
                     }
 
