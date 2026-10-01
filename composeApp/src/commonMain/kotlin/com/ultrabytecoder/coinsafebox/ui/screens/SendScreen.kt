@@ -308,6 +308,16 @@ fun SendScreen(
                         }
                     }
 
+                    // Placed right under the balance (not at the bottom of the form)
+                    // so the warning is always in view and visually tied to the
+                    // balance it refers to.
+                    if (balanceSufficiency != BalanceSufficiency.Sufficient) {
+                        Spacer(modifier = Modifier.height(12.dp))
+                        InsufficientBalanceBanner(
+                            message = insufficientBalanceMessage(accountVal!!.symbol, balanceSufficiency)
+                        )
+                    }
+
                     Spacer(modifier = Modifier.height(24.dp))
 
                     Row(
@@ -467,13 +477,6 @@ fun SendScreen(
                             text = feeErrVal,
                             color = MaterialTheme.colorScheme.error,
                             style = MaterialTheme.typography.bodySmall
-                        )
-                    }
-
-                    if (balanceSufficiency != BalanceSufficiency.Sufficient) {
-                        Spacer(modifier = Modifier.height(12.dp))
-                        InsufficientBalanceBanner(
-                            message = insufficientBalanceMessage(accountVal!!.symbol, balanceSufficiency)
                         )
                     }
                     }

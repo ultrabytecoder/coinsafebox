@@ -63,9 +63,10 @@ results = []
 STATE = {"addr": None}
 
 
-def check(name, ok, detail=""):
-    results.append((name, ok, detail))
-    print(f"  [{'PASS' if ok else 'FAIL'}] {name}" + (f" — {detail}" if detail else ""))
+def check(name, ok, detail="", soft=False):
+    results.append((name, ok, detail, soft))
+    tag = "PASS" if ok else ("INFO" if soft else "FAIL")
+    print(f"  [{tag}] {name}" + (f" — {detail}" if detail else ""))
     return ok
 
 
@@ -313,10 +314,13 @@ def main():
 
     print("\n=== summary ===")
     failed = 0
-    for name, ok, detail in results:
-        print(f"  [{'PASS' if ok else 'FAIL'}] {name}" + (f" — {detail}" if detail else ""))
-        failed += 0 if ok else 1
-    print(f"\n{len(results) - failed}/{len(results)} checks passed")
+    for name, ok, detail, soft in results:
+        tag = "PASS" if ok else ("INFO" if soft else "FAIL")
+        print(f"  [{tag}] {name}" + (f" — {detail}" if detail else ""))
+        failed += 0 if (ok or soft) else 1
+    hard = [r for r in results if not r[3]]
+    print(f"\n{sum(1 for r in hard if r[1])}/{len(hard)} hard checks passed"
+          + (" (INFO checks are non-fatal)" if any(r[3] for r in results) else ""))
     ui.shot("final")
     sys.exit(1 if failed else 0)
 
