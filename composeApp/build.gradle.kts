@@ -28,6 +28,7 @@ val kkIsTestnet = kkNetwork == "testnet"
 val kkEtherscanKey = localProperties.getProperty(
     if (kkIsTestnet) "etherscan.testnet.api.key" else "etherscan.mainnet.api.key", ""
 )
+val kkWcProjectId = localProperties.getProperty("wc.project.id", "")
 // Write the generated constant eagerly at configuration time so the srcDir below
 // is always valid before compilation. Content is deterministic per (network, key),
 // so Gradle's input-aware up-to-date check still skips recompiles when unchanged.
@@ -40,6 +41,7 @@ File(kkGenDir, "DesktopBuildConfig.kt").writeText(
     object DesktopBuildConfig {
         const val IS_TESTNET = ${kkIsTestnet}
         const val ETHERSCAN_API_KEY = "${kkEtherscanKey.replace("\\", "\\\\").replace("\"", "\\\"")}"
+        const val WC_PROJECT_ID = "${kkWcProjectId.replace("\\", "\\\\").replace("\"", "\\\"")}"
     }
     """.trimIndent()
 )
@@ -222,6 +224,7 @@ kotlin {
             dependencies {
                 implementation(libs.kotlin.test)
                 implementation(libs.junit)
+                implementation(libs.sqldelight.sqlite.driver)
             }
         }
 
@@ -256,8 +259,9 @@ android {
         applicationId = "com.ultrabytecoder.coinsafebox"
         minSdk = libs.versions.android.minSdk.get().toInt()
         targetSdk = libs.versions.android.targetSdk.get().toInt()
-        versionCode = 3
-        versionName = "1.1.1"
+        versionCode = 4
+        versionName = "1.2.0"
+        buildConfigField("String", "WC_PROJECT_ID", "\"${localProperties.getProperty("wc.project.id", "")}\"")
     }
 
     buildFeatures {

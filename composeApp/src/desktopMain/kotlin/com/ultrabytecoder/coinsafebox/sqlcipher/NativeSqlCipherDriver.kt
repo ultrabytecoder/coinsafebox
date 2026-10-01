@@ -69,10 +69,24 @@ class NativeSqlCipherDriver(
         exec("PRAGMA foreign_keys = ON")
 
         val oldVersion = queryUserVersion()
-        if (migrateEmptySchema && !databaseFileExists) {
-            schema.create(this)
-        } else if (oldVersion < schema.version) {
-            schema.migrate(this, oldVersion, schema.version)
+        val createdOrMigrated = when {
+            migrateEmptySchema && !databaseFileExists -> {
+                schema.create(this)
+                true
+            }
+            oldVersion < schema.version -> {
+                schema.migrate(this, oldVersion, schema.version)
+                true
+            }
+            else -> false
+        }
+        // The generated create()/migrate() leave PRAGMA user_version untouched, so
+        // record the schema version here. Without this, a freshly-created DB would
+        // still report version 0 on the next launch and the driver would re-run the
+        // migration, crashing on "table already exists". (The Android/iOS drivers
+        // get this from their OpenHelper equivalent.)
+        if (createdOrMigrated) {
+            setUserVersion(schema.version)
         }
     }
 
@@ -299,6 +313,10 @@ class NativeSqlCipherDriver(
         } finally {
             sqlite.sqlite3_finalize(stmt)
         }
+    }
+
+    private fun setUserVersion(version: Long) {
+        exec("PRAGMA user_version = $version")
     }
 
     private fun ensureOpen() {

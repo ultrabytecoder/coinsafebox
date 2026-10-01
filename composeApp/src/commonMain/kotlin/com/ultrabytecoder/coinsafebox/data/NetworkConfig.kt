@@ -38,6 +38,7 @@ data class NetworkConfig(
     val erc20Tokens: Map<String, TokenInfo>,
     val trc20Tokens: Map<String, TokenInfo>,
     val exchangeRateApiBase: String,
+    val wcProjectId: String,
 ) {
     companion object {
         // EIP-1559: 25% safety margin on baseFee to account for next-block fluctuations
@@ -47,7 +48,7 @@ data class NetworkConfig(
         const val ETH_GAS_BUFFER_NUMERATOR = 120
         const val ETH_GAS_BUFFER_DENOMINATOR = 100
 
-        fun testnet(etherscanApiKey: String): NetworkConfig = NetworkConfig(
+        fun testnet(etherscanApiKey: String, wcProjectId: String = ""): NetworkConfig = NetworkConfig(
             ethRpcUrl = "https://ethereum-sepolia-rpc.publicnode.com",
             ethChainId = 11155111L,
             ethGasLimit = 21000L,
@@ -64,9 +65,10 @@ data class NetworkConfig(
             erc20Tokens = TestnetTokens.erc20Sepolia,
             trc20Tokens = TestnetTokens.trc20Nile,
             exchangeRateApiBase = "https://backend.coinsafebox.duckdns.org",
+            wcProjectId = wcProjectId,
         )
 
-        fun mainnet(etherscanApiKey: String): NetworkConfig = NetworkConfig(
+        fun mainnet(etherscanApiKey: String, wcProjectId: String = ""): NetworkConfig = NetworkConfig(
             ethRpcUrl = "https://ethereum-rpc.publicnode.com",
             ethChainId = 1L,
             ethGasLimit = 21000L,
@@ -83,6 +85,7 @@ data class NetworkConfig(
             erc20Tokens = MainnetTokens.erc20,
             trc20Tokens = MainnetTokens.trc20,
             exchangeRateApiBase = "https://backend.coinsafebox.duckdns.org",
+            wcProjectId = wcProjectId,
         )
     }
 }

@@ -20,13 +20,14 @@ fun MainViewController() = ComposeUIViewController {
     KoinApplication(
         application = {
             val apiKey = NSBundle.mainBundle.objectForInfoDictionaryKey("EtherscanApiKey") as? String ?: ""
+            val wcProjectId = NSBundle.mainBundle.objectForInfoDictionaryKey("WcProjectId") as? String ?: ""
             // Network + Etherscan key are injected by the host app's Info.plist
             // (per Testnet/Mainnet Xcode build configuration). Defaults to testnet.
             val network = NSBundle.mainBundle.objectForInfoDictionaryKey("Network") as? String ?: "testnet"
             val networkConfig = if (network == "mainnet") {
-                NetworkConfig.mainnet(apiKey)
+                NetworkConfig.mainnet(apiKey, wcProjectId)
             } else {
-                NetworkConfig.testnet(apiKey)
+                NetworkConfig.testnet(apiKey, wcProjectId)
             }
             modules(appModule(networkConfig), platformModule)
         }
