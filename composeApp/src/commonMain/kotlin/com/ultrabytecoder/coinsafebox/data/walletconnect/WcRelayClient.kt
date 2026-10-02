@@ -94,7 +94,8 @@ internal class WcRelayClient(
     internal val dispatcher: CoroutineDispatcher = Dispatchers.Default,
 ) {
 
-    private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + dispatcher)
+    @Volatile
+    private var scope: CoroutineScope = CoroutineScope(SupervisorJob() + dispatcher)
     private val httpClient: HttpClient by lazy { createClient() }
     private val factory: (url: String) -> WcRelayTransport =
         transportFactory ?: { url -> KtorWcRelayTransport(httpClient, url, scope) }
@@ -107,6 +108,9 @@ internal class WcRelayClient(
 
     private val subscriptionsLock = Any()
     private val subscriptions = mutableMapOf<String, String>()
+    // Topics the client must keep subscribed across (re)connects. The relay client is the
+    // sole owner of (re)subscription; callers add topics via subscribe() or track().
+    private val trackedTopics = mutableSetOf<String>()
 
     private val dedupeLock = Any()
     private val seenMessages = LinkedHashSet<String>()
@@ -127,37 +131,51 @@ internal class WcRelayClient(
 
     fun connect() {
         if (projectId.isBlank()) throw WcProtocolException("projectId must not be blank")
-        val existing = connectionJob
-        if (existing != null && existing.isActive) return
-        connectionJob = scope.launch {
-            while (isActive) {
-                val jwt = crypto.relayAuthJwt(relayBaseUrl)
-                val url = buildRelayUrl(jwt)
-                var session: WcRelaySession? = null
-                try {
-                    session = factory(url).connect { text -> handleIncoming(text) }
-                    activeSession = session
-                    resubscribeAll()
-                    runCatching { onConnectedHandler?.invoke() }
-                    session.closed.await()
-                } catch (e: CancellationException) {
-                    throw e
-                } catch (e: Exception) {
-                    println("WcRelayClient: connection error — ${e.message}")
-                } finally {
-                    activeSession = null
-                    session?.close()
+        // Synchronize the check-and-set so two concurrent connect() calls cannot both launch a
+        // connection job (which would orphan a socket). Recreate the scope if it was cancelled
+        // by a previous disconnect() so the client can be reused.
+        synchronized(stateLock) {
+            val existing = connectionJob
+            if (existing != null && existing.isActive) return
+            if (!scope.isActive) scope = CoroutineScope(SupervisorJob() + dispatcher)
+            connectionJob = scope.launch {
+                while (isActive) {
+                    val jwt = crypto.relayAuthJwt(relayBaseUrl)
+                    val url = buildRelayUrl(jwt)
+                    var session: WcRelaySession? = null
+                    try {
+                        session = factory(url).connect { text -> handleIncoming(text) }
+                        activeSession = session
+                        // Sub-ids from the previous socket are stale; drop them so resubscribeAll()
+                        // rebuilds fresh ones (and a failed resubscribe leaves no stale id behind).
+                        synchronized(subscriptionsLock) { subscriptions.clear() }
+                        resubscribeAll()
+                        runCatching { onConnectedHandler?.invoke() }
+                        session.closed.await()
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (e: Exception) {
+                        println("WcRelayClient: connection error — ${e.message}")
+                    } finally {
+                        activeSession = null
+                        session?.close()
+                    }
+                    failAllPending("relay connection lost")
+                    if (!isActive) break
+                    delay(reconnectDelayMillis)
                 }
-                failAllPending("relay connection lost")
-                if (!isActive) break
-                delay(reconnectDelayMillis)
             }
         }
     }
 
     fun disconnect() {
-        connectionJob?.cancel()
-        connectionJob = null
+        // Hold stateLock so disconnect() is serialized with connect()'s check-and-set: a connect()
+        // reading scope.isActive after this runs sees the cancelled scope and recreates it.
+        synchronized(stateLock) {
+            connectionJob?.cancel()
+            connectionJob = null
+            scope.cancel()
+        }
         failAllPending("relay disconnected")
     }
 
@@ -184,12 +202,21 @@ internal class WcRelayClient(
 
     suspend fun subscribe(topic: String): String {
         requireConnected()
+        synchronized(subscriptionsLock) { trackedTopics.add(topic) }
         val params = buildJsonObject { put("topic", topic) }
         val result = request("irn_subscribe", params)
         val subId = result?.jsonPrimitive?.contentOrNull
         if (subId.isNullOrEmpty()) throw WcProtocolException("subscribe failed for topic $topic")
         synchronized(subscriptionsLock) { subscriptions[topic] = subId }
         return subId
+    }
+
+    /**
+     * Remembers [topic] so it is (re)subscribed on the next (re)connect, without subscribing
+     * right now. Used for topics that must survive a restart before the socket is open.
+     */
+    fun track(topic: String) {
+        synchronized(subscriptionsLock) { trackedTopics.add(topic) }
     }
 
     suspend fun unsubscribe(topic: String) {
@@ -201,7 +228,29 @@ internal class WcRelayClient(
             put("topic", topic)
         }
         request("irn_unsubscribe", params)
-        synchronized(subscriptionsLock) { subscriptions.remove(topic) }
+        synchronized(subscriptionsLock) {
+            subscriptions.remove(topic)
+            trackedTopics.remove(topic)
+        }
+    }
+
+    /**
+     * Drops [topic] from tracking (always) and sends `irn_unsubscribe` if we hold a sub-id
+     * (best-effort). Unlike [unsubscribe] it never throws, so it is safe on the
+     * session-deletion path even when the relay is down — this prevents a deleted topic from
+     * being re-subscribed on the next (re)connect.
+     */
+    suspend fun release(topic: String) {
+        val subId = synchronized(subscriptionsLock) { subscriptions.remove(topic) }
+        synchronized(subscriptionsLock) { trackedTopics.remove(topic) }
+        if (subId != null) {
+            runCatching {
+                request("irn_unsubscribe", buildJsonObject {
+                    put("id", subId)
+                    put("topic", topic)
+                })
+            }.onFailure { println("WcRelayClient: unsubscribe failed for $topic — ${it.message}") }
+        }
     }
 
     /**
@@ -348,14 +397,12 @@ internal class WcRelayClient(
     }
 
     private suspend fun resubscribeAll() {
-        val snapshot = synchronized(subscriptionsLock) { subscriptions.toMap() }
-        for ((topic, _) in snapshot) {
-            runCatching {
-                val subId = subscribe(topic)
-                synchronized(subscriptionsLock) { subscriptions[topic] = subId }
-            }.onFailure {
-                println("WcRelayClient: resubscribe failed for topic $topic — ${it.message}")
-            }
+        val snapshot = synchronized(subscriptionsLock) { trackedTopics.toSet() }
+        for (topic in snapshot) {
+            // Skip topics released (e.g. session deleted) concurrently with this resubscription.
+            if (!synchronized(subscriptionsLock) { trackedTopics.contains(topic) }) continue
+            runCatching { subscribe(topic) }
+                .onFailure { println("WcRelayClient: resubscribe failed for topic $topic — ${it.message}") }
         }
     }
 

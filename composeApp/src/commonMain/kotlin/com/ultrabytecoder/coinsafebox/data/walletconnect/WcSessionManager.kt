@@ -6,6 +6,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.isActive
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonArray
@@ -35,10 +37,11 @@ internal class WcSessionManager(
     private val supportedChainIds: List<Long> = listOf(1L),
     private val requestHandler: WcSessionRequestHandler? = null,
     private val sessionRepository: WcSessionRepository,
-    dispatcher: CoroutineDispatcher = Dispatchers.Default,
+    private val dispatcher: CoroutineDispatcher = Dispatchers.Default,
 ) {
 
-    private val scope = CoroutineScope(SupervisorJob() + dispatcher)
+    @Volatile
+    private var scope: CoroutineScope = CoroutineScope(SupervisorJob() + dispatcher)
     private val json = Json { ignoreUnknownKeys = true }
 
     private val stateLock = Any()
@@ -59,17 +62,17 @@ internal class WcSessionManager(
     suspend fun start() {
         if (started) return
         started = true
+        if (!scope.isActive) scope = CoroutineScope(SupervisorJob() + dispatcher)
         loadSessions()
         relay.setOnMessage { topic, payloadJson -> onMessage(topic, payloadJson) }
-        relay.setOnConnected { scope.launch { resubscribeSessionTopics() } }
         relay.connect()
     }
 
     fun stop() {
         started = false
         relay.setOnMessage(null)
-        relay.setOnConnected(null)
         relay.disconnect()
+        scope.cancel()
     }
 
     // ---------- Pairing ------------------------------------------------------- //
@@ -111,54 +114,82 @@ internal class WcSessionManager(
     suspend fun approve(proposalId: Long, selectedAccounts: List<String>): WcSession {
         val proposal = synchronized(stateLock) { proposals[proposalId] }
             ?: throw WcProtocolException("unknown proposal: $proposalId")
+        if (isExpired(proposal.expiry)) {
+            synchronized(stateLock) { proposals.remove(proposalId) }
+            throw WcProtocolException("proposal $proposalId has expired")
+        }
         val pairingTopic = proposal.pairingTopic
 
         val approved = computeApprovedNamespaces(proposal, selectedAccounts)
-
-        val keyPair = crypto.generateX25519KeyPair()
-        val walletPublicKey = WcEncoding.hexEncode(keyPair.publicKey)
-
-        val sessionTopic = crypto.sessionTopicFor(walletPublicKey, proposal.proposerPublicKey)
-
-        ensureConnected()
-        relay.subscribe(sessionTopic)
-
-        val proposalResult = WcJsonRpc.formatJsonRpcResult(
-            proposalId,
-            buildJsonObject {
-                put("relay", buildJsonObject { put("protocol", RELAY_PROTOCOL) })
-                put("responderPublicKey", walletPublicKey)
-            },
-        )
-        val proposalEnvelope = crypto.encodeEnvelope(pairingTopic, proposalResult.toString())
-
         val settleId = WcJsonRpc.payloadId()
         val expiry = calcExpiry(SEVEN_DAYS)
-        val settleParams = buildJsonObject {
-            put("relay", buildJsonObject { put("protocol", RELAY_PROTOCOL) })
-            put("namespaces", approved.toJsonObject())
-            put("controller", walletMetadata.toJsonObject())
-            put("expiry", expiry)
-        }
-        val settleRequest = WcJsonRpc.formatJsonRpcRequest("wc_sessionSettle", settleParams, settleId)
-        val settleEnvelope = crypto.encodeEnvelope(sessionTopic, settleRequest.toString())
 
-        relay.relayRequest(
-            "wc_approveSession",
-            buildJsonObject {
-                put("sessionTopic", sessionTopic)
-                put("pairingTopic", pairingTopic)
-                put("sessionProposalResponse", proposalEnvelope)
-                put("sessionSettlementRequest", settleEnvelope)
-            },
-        )
+        // Key material and the subscription are created INSIDE the try so that any failure
+        // (crypto or network) cleans up whatever was already written — no orphaned X25519
+        // private key or symKey.
+        var walletPublicKey: String? = null
+        var sessionTopic: String? = null
+        try {
+            val keyPair = crypto.generateX25519KeyPair()
+            walletPublicKey = WcEncoding.hexEncode(keyPair.publicKey)
+            sessionTopic = crypto.sessionTopicFor(walletPublicKey!!, proposal.proposerPublicKey)
+            val pub = walletPublicKey!!
+            val topic = sessionTopic!!
+
+            ensureConnected()
+            relay.subscribe(topic)
+
+            val proposalResult = WcJsonRpc.formatJsonRpcResult(
+                proposalId,
+                buildJsonObject {
+                    put("relay", buildJsonObject { put("protocol", RELAY_PROTOCOL) })
+                    put("responderPublicKey", pub)
+                },
+            )
+            val proposalEnvelope = crypto.encodeEnvelope(pairingTopic, proposalResult.toString())
+
+            val settleParams = buildJsonObject {
+                put("relay", buildJsonObject { put("protocol", RELAY_PROTOCOL) })
+                put("namespaces", approved.toJsonObject())
+                put(
+                    "controller",
+                    buildJsonObject {
+                        put("publicKey", pub)
+                        put("metadata", walletMetadata.toJsonObject())
+                    },
+                )
+                put("expiry", expiry)
+            }
+            val settleRequest = WcJsonRpc.formatJsonRpcRequest("wc_sessionSettle", settleParams, settleId)
+            val settleEnvelope = crypto.encodeEnvelope(topic, settleRequest.toString())
+
+            relay.relayRequest(
+                "wc_approveSession",
+                buildJsonObject {
+                    put("sessionTopic", topic)
+                    put("pairingTopic", pairingTopic)
+                    put("sessionProposalResponse", proposalEnvelope)
+                    put("sessionSettlementRequest", settleEnvelope)
+                    put("ttl", APPROVE_SESSION_TTL)
+                },
+            )
+        } catch (e: Exception) {
+            // Remove any key material / subscription created before the failure.
+            walletPublicKey?.let { crypto.deleteSymKey(it) }
+            sessionTopic?.let { topic ->
+                crypto.deleteSymKey(topic)
+                runCatching { relay.release(topic) }
+                    .onFailure { println("WcSessionManager: cleanup release failed on approve error — ${it.message}") }
+            }
+            throw e
+        }
 
         val session = WcSession(
-            topic = sessionTopic,
+            topic = sessionTopic!!,
             pairingTopic = pairingTopic,
             proposerPublicKey = proposal.proposerPublicKey,
             proposerMetadata = proposal.proposerMetadata,
-            responderPublicKey = walletPublicKey,
+            responderPublicKey = walletPublicKey!!,
             responderMetadata = walletMetadata,
             namespaces = approved,
             expiry = expiry,
@@ -166,7 +197,7 @@ internal class WcSessionManager(
             settleRequestId = settleId,
         )
         synchronized(stateLock) {
-            sessions[sessionTopic] = session
+            sessions[sessionTopic!!] = session
             proposals.remove(proposalId)
         }
         saveSessions()
@@ -176,6 +207,10 @@ internal class WcSessionManager(
     suspend fun reject(proposalId: Long, reason: WcRpcError = WcRpcError(ERROR_USER_REJECTED, "User rejected")) {
         val proposal = synchronized(stateLock) { proposals[proposalId] }
             ?: throw WcProtocolException("unknown proposal: $proposalId")
+        if (isExpired(proposal.expiry)) {
+            synchronized(stateLock) { proposals.remove(proposalId) }
+            throw WcProtocolException("proposal $proposalId has expired")
+        }
         val payload = WcJsonRpc.formatJsonRpcError(proposalId, reason.code, reason.message)
         val envelope = crypto.encodeEnvelope(proposal.pairingTopic, payload.toString())
         ensureConnected()
@@ -218,7 +253,7 @@ internal class WcSessionManager(
         val payload = WcJsonRpc.formatJsonRpcRequest("wc_sessionPing", buildJsonObject {}, WcJsonRpc.payloadId())
         val envelope = crypto.encodeEnvelope(topic, payload.toString())
         ensureConnected()
-        relay.publish(topic, envelope, ttl = SESSION_PING_RES_TTL, prompt = false, tag = SESSION_PING_RES_TAG)
+        relay.publish(topic, envelope, ttl = SESSION_PING_REQ_TTL, prompt = false, tag = SESSION_PING_REQ_TAG)
     }
 
     // ---------- Message routing ---------------------------------------------- //
@@ -248,7 +283,12 @@ internal class WcSessionManager(
         when (method) {
             "wc_sessionPropose" -> handlePropose(topic, payload)
             "wc_sessionRequest" -> handleSessionRequest(topic, payload)
-            "wc_sessionPing" -> sendResult(topic, id, JsonPrimitive(true), SESSION_PING_RES_TTL, SESSION_PING_RES_TAG)
+            "wc_sessionPing" -> {
+                val session = liveSession(topic, id, SESSION_PING_RES_TTL, SESSION_PING_RES_TAG)
+                if (session != null) {
+                    sendResult(topic, id, JsonPrimitive(true), SESSION_PING_RES_TTL, SESSION_PING_RES_TAG)
+                }
+            }
             "wc_sessionDelete" -> handleSessionDeleteRequest(topic, payload)
             "wc_sessionUpdate" -> handleSessionUpdate(topic, payload)
             "wc_sessionExtend" -> handleSessionExtend(topic, payload)
@@ -284,24 +324,52 @@ internal class WcSessionManager(
             requiredNamespaces = parseNamespaces(params["requiredNamespaces"]?.jsonObject),
             optionalNamespaces = parseNamespaces(params["optionalNamespaces"]?.jsonObject),
             pairingTopic = pairingTopic,
-            expiry = params["expiry"]?.jsonPrimitive?.long ?: 0L,
+            expiry = params["expiry"]?.jsonPrimitive?.long
+                ?: (Clock.System.now().toEpochMilliseconds() / 1000L + FIVE_MINUTES),
         )
         synchronized(stateLock) { proposals[proposalId] = proposal }
         onProposal?.invoke(proposal)
     }
 
     private suspend fun handleSessionRequest(sessionTopic: String, payload: JsonObject) {
-        val params = payload["params"]?.jsonObject ?: return
-        val id = payload["id"]?.jsonPrimitive?.long ?: return
-        val inner = params["request"]?.jsonObject ?: return
-        val requestMethod = inner["method"]?.jsonPrimitive?.contentOrNull ?: return
+        val params = payload["params"]?.jsonObject
+        val id = payload["id"]?.jsonPrimitive?.long
+        // A malformed frame with no id can't be responded to; drop it.
+        if (params == null || id == null) return
+        val inner = params["request"]?.jsonObject
+        val requestMethod = inner?.get("method")?.jsonPrimitive?.contentOrNull
+        // We have the id, so report a parse error rather than leaving the dApp to time out at 900s.
+        if (inner == null || requestMethod == null) {
+            sendError(
+                sessionTopic, id, ERROR_PARSE, "Malformed wc_sessionRequest",
+                SESSION_REQUEST_RES_TTL, SESSION_REQUEST_RES_TAG,
+            )
+            return
+        }
         val requestParams: JsonElement = inner["params"] ?: JsonPrimitive("")
         val chainId = params["chainId"]?.jsonPrimitive?.contentOrNull
-        val session = synchronized(stateLock) { sessions[sessionTopic] } ?: return
+        val session = liveSession(sessionTopic, id, SESSION_REQUEST_RES_TTL, SESSION_REQUEST_RES_TAG) ?: return
+
+        // Enforce the approved-namespace boundary before touching the request handler: never
+        // honour a method/chain the user did not approve for this session.
+        if (!isApprovedRequest(session, chainId, requestMethod)) {
+            sendError(
+                sessionTopic, id, ERROR_METHOD_NOT_APPROVED,
+                "Method $requestMethod not approved for this session",
+                SESSION_REQUEST_RES_TTL, SESSION_REQUEST_RES_TAG,
+            )
+            return
+        }
+
         val request = WcSessionRequest(id, chainId, requestMethod, requestParams)
 
-        val outcome = requestHandler?.handleRequest(session, request)
-            ?: WcRequestOutcome.Failure(ERROR_NOT_SUPPORTED, "no request handler")
+        val outcome = try {
+            requestHandler?.handleRequest(session, request)
+                ?: WcRequestOutcome.Failure(ERROR_NOT_SUPPORTED, "no request handler")
+        } catch (e: Exception) {
+            println("WcSessionManager: request handler threw on $sessionTopic — ${e.message}")
+            WcRequestOutcome.Failure(ERROR_INTERNAL, "Internal error")
+        }
 
         val response = when (outcome) {
             is WcRequestOutcome.Success -> WcJsonRpc.formatJsonRpcResult(id, outcome.result)
@@ -313,28 +381,41 @@ internal class WcSessionManager(
     private suspend fun handleSessionDeleteRequest(sessionTopic: String, payload: JsonObject) {
         val id = payload["id"]?.jsonPrimitive?.long ?: return
         val reason = payload["params"]?.jsonObject?.let { parseError(it) }
-        // Respond first (still needs the session symKey to encode).
-        sendResult(sessionTopic, id, JsonPrimitive(true), SESSION_DELETE_RES_TTL, SESSION_DELETE_RES_TAG)
+        // Ack best-effort (needs the symKey); delete locally regardless so a failed response
+        // cannot leave a ghost session that the dApp has already dropped.
+        runCatching { sendResult(sessionTopic, id, JsonPrimitive(true), SESSION_DELETE_RES_TTL, SESSION_DELETE_RES_TAG) }
+            .onFailure { println("WcSessionManager: failed to ack session delete on $sessionTopic — ${it.message}") }
         deleteSessionLocal(sessionTopic)
         onSessionDeleted?.invoke(sessionTopic, reason)
     }
 
     private suspend fun handleSessionUpdate(sessionTopic: String, payload: JsonObject) {
         val id = payload["id"]?.jsonPrimitive?.long ?: return
-        val params = payload["params"]?.jsonObject
-        val namespaces = parseNamespaces(params?.get("namespaces")?.jsonObject)
-        val session = synchronized(stateLock) { sessions[sessionTopic] } ?: return
-        val updated = session.copy(namespaces = namespaces)
-        synchronized(stateLock) { sessions[sessionTopic] = updated }
-        saveSessions()
-        sendResult(sessionTopic, id, JsonPrimitive(true), SESSION_UPDATE_RES_TTL, SESSION_UPDATE_RES_TAG)
+        // liveSession silently drops unknown sessions and sends error 6 + deletes expired ones.
+        // For a live session the wallet is always the controller, so a dApp-initiated update is
+        // unauthorized (error 3003) and does not mutate the session.
+        val session = liveSession(sessionTopic, id, SESSION_UPDATE_RES_TTL, SESSION_UPDATE_RES_TAG) ?: return
+        sendError(
+            sessionTopic,
+            id,
+            ERROR_UNAUTHORIZED_UPDATE,
+            "Unauthorized update request",
+            SESSION_UPDATE_RES_TTL,
+            SESSION_UPDATE_RES_TAG,
+        )
     }
 
     private suspend fun handleSessionExtend(sessionTopic: String, payload: JsonObject) {
         val id = payload["id"]?.jsonPrimitive?.long ?: return
         val params = payload["params"]?.jsonObject
-        val expiry = params?.get("expiry")?.jsonPrimitive?.long ?: calcExpiry(SEVEN_DAYS)
-        val session = synchronized(stateLock) { sessions[sessionTopic] } ?: return
+        val session = liveSession(sessionTopic, id, SESSION_EXTEND_RES_TTL, SESSION_EXTEND_RES_TAG) ?: return
+        val now = Clock.System.now().toEpochMilliseconds() / 1000L
+        val maxExpiry = calcExpiry(SEVEN_DAYS)
+        val proposed = params?.get("expiry")?.jsonPrimitive?.long
+        // Extend must only ever push the expiry later: clamp the proposal to [now+1, 7d] and never
+        // shrink below the current expiry, so a bogus/past value can't kill the session.
+        val clamped = (proposed ?: maxExpiry).coerceIn(now + 1, maxExpiry)
+        val expiry = maxOf(session.expiry, clamped)
         val updated = session.copy(expiry = expiry)
         synchronized(stateLock) { sessions[sessionTopic] = updated }
         saveSessions()
@@ -348,24 +429,49 @@ internal class WcSessionManager(
         publishOnTopic(topic, payload, ttl, tag)
     }
 
+    private suspend fun sendError(topic: String, id: Long, code: Int, message: String, ttl: Int, tag: Int) {
+        val payload = WcJsonRpc.formatJsonRpcError(id, code, message)
+        publishOnTopic(topic, payload, ttl, tag)
+    }
+
     private suspend fun publishOnTopic(topic: String, payload: JsonObject, ttl: Int, tag: Int) {
         val envelope = crypto.encodeEnvelope(topic, payload.toString())
         relay.publish(topic, envelope, ttl = ttl, prompt = false, tag = tag)
     }
 
+    private fun isExpired(expirySeconds: Long): Boolean =
+        Clock.System.now().toEpochMilliseconds() / 1000L >= expirySeconds
+
+    /**
+     * Returns the live session for [topic]. If the session exists but is expired, sends an
+     * error response and deletes it, then returns null. Returns null (no error) if unknown.
+     */
+    private suspend fun liveSession(topic: String, id: Long, ttl: Int, tag: Int): WcSession? {
+        val session = synchronized(stateLock) { sessions[topic] } ?: return null
+        if (!isExpired(session.expiry)) return session
+        sendError(topic, id, ERROR_EXPIRED, "Session expired", ttl, tag)
+        deleteSessionLocal(topic)
+        return null
+    }
+
+    /**
+     * True when [method] is approved for [chainId] in the session's namespaces (a method only
+     * counts if the namespace covers the chain via an account or an explicit chain entry).
+     * Mirrors the SDK's `isValidNamespacesRequest`.
+     */
+    private fun isApprovedRequest(session: WcSession, chainId: String?, method: String): Boolean =
+        session.namespaces.values.any { ns ->
+            val coversChain = chainId == null ||
+                ns.accounts?.any { it.substringBeforeLast(':') == chainId } == true ||
+                ns.chains?.contains(chainId) == true
+            coversChain && method in ns.methods
+        }
+
     private suspend fun deleteSessionLocal(topic: String) {
         synchronized(stateLock) { sessions.remove(topic) }
         crypto.deleteSymKey(topic)
-        saveSessions()
-        runCatching { relay.unsubscribe(topic) }
-    }
-
-    private suspend fun resubscribeSessionTopics() {
-        val topics = synchronized(stateLock) { sessions.keys.toList() }
-        for (topic in topics) {
-            runCatching { relay.subscribe(topic) }
-                .onFailure { println("WcSessionManager: resubscribe $topic failed — ${it.message}") }
-        }
+        runCatching { sessionRepository.delete(topic) }
+        relay.release(topic)
     }
 
     private suspend fun ensureConnected() {
@@ -386,20 +492,43 @@ internal class WcSessionManager(
         val approved = mutableMapOf<String, WcNamespace>()
         val namespaceKeys = (proposal.requiredNamespaces.keys + proposal.optionalNamespaces.keys).distinct()
         for (ns in namespaceKeys) {
-            if (ns != EIP155) continue
             val req = proposal.requiredNamespaces[ns]
             val opt = proposal.optionalNamespaces[ns]
+            // This wallet is EVM-only. A required non-EVM namespace cannot be satisfied, so the
+            // settle would be rejected by the dApp's SDK (isConformingNamespaces). Reject early.
+            if (ns != EIP155) {
+                if (req != null) throw WcProtocolException("required namespace $ns is not supported by this wallet")
+                continue
+            }
             val requestedChains = (req?.chains.orEmpty() + opt?.chains.orEmpty()).distinct()
             // Only approve accounts that sit on a chain the proposal actually requests.
             val nsAccounts = selectedAccounts.filter { acc ->
                 acc.startsWith("$ns:") && (requestedChains.isEmpty() || acc.substringBeforeLast(':') in requestedChains)
             }
-            if (nsAccounts.isEmpty()) continue
             val methods = (req?.methods.orEmpty() + opt?.methods.orEmpty()).distinct()
                 .filter { it in SUPPORTED_METHODS }
             val events = (req?.events.orEmpty() + opt?.events.orEmpty()).distinct()
                 .filter { it in SUPPORTED_EVENTS }
-            if (methods.isEmpty() && events.isEmpty()) continue
+            if (req != null) {
+                // Required namespace: must be fully satisfiable, else the dApp's SDK rejects the
+                // settle (isConformingNamespaces needs per-chain accounts + methods/events overlap).
+                if (nsAccounts.isEmpty()) throw WcProtocolException("no selected accounts for required namespace $ns")
+                if (req.methods.none { it in SUPPORTED_METHODS }) {
+                    throw WcProtocolException("no supported methods for required namespace $ns")
+                }
+                if (req.events.none { it in SUPPORTED_EVENTS }) {
+                    throw WcProtocolException("no supported events for required namespace $ns")
+                }
+                req.chains?.forEach { chain ->
+                    if (nsAccounts.none { it.substringBeforeLast(':') == chain }) {
+                        throw WcProtocolException("required chain $chain is not covered by the selected accounts")
+                    }
+                }
+            } else {
+                // Optional namespace: include only if it has usable accounts and methods/events.
+                if (nsAccounts.isEmpty()) continue
+                if (methods.isEmpty() && events.isEmpty()) continue
+            }
             approved[ns] = WcNamespace(accounts = nsAccounts, methods = methods, events = events)
         }
         if (approved.isEmpty()) throw WcProtocolException("no approvable namespaces for the selected accounts")
@@ -411,6 +540,8 @@ internal class WcSessionManager(
     private suspend fun saveSessions() {
         val list = synchronized(stateLock) { sessions.values.toList() }
         for (session in list) {
+            // Skip sessions deleted concurrently (symKey gone) to avoid re-inserting a stale row.
+            if (!crypto.hasKey(session.topic)) continue
             runCatching { sessionRepository.upsert(session) }
                 .onFailure { println("WcSessionManager: failed to save session ${session.topic} — ${it.message}") }
         }
@@ -418,11 +549,23 @@ internal class WcSessionManager(
 
     private suspend fun loadSessions() {
         val loaded = runCatching { sessionRepository.getAll() }.getOrNull() ?: return
+        val toTrack = mutableListOf<String>()
         synchronized(stateLock) {
             loaded.forEach { session ->
-                if (crypto.hasKey(session.topic)) sessions[session.topic] = session
+                if (crypto.hasKey(session.topic) && !isExpired(session.expiry)) {
+                    sessions[session.topic] = session
+                    toTrack.add(session.topic)
+                }
             }
         }
+        // Prune rows whose key is gone or that have expired, and track live topics so the
+        // relay client resubscribes to them once the socket is (re)established.
+        loaded.forEach { session ->
+            if (!crypto.hasKey(session.topic) || isExpired(session.expiry)) {
+                runCatching { sessionRepository.delete(session.topic) }
+            }
+        }
+        toTrack.forEach { topic -> relay.track(topic) }
     }
 
     // ---------- JSON helpers -------------------------------------------------- //
@@ -486,7 +629,12 @@ internal class WcSessionManager(
         const val ERROR_USER_REJECTED = 5000
         const val ERROR_USER_DISCONNECTED = 6000
         const val ERROR_NOT_SUPPORTED = 5001
+        const val ERROR_METHOD_NOT_APPROVED = 5002
+        const val ERROR_INTERNAL = 5003
         const val ERROR_PARSE = -32700
+        // WC v2 SDK error codes (errors.ts): UNAUTHORIZED_UPDATE_REQUEST=3003, EXPIRED=6.
+        const val ERROR_UNAUTHORIZED_UPDATE = 3003
+        const val ERROR_EXPIRED = 6
 
         private const val FIVE_MINUTES = 300
         private const val ONE_DAY = 86_400
@@ -495,10 +643,15 @@ internal class WcSessionManager(
 
         private const val PROPOSE_REJECT_TTL = FIVE_MINUTES
         private const val PROPOSE_REJECT_TAG = 1120
+        // The `wc_approveSession` relay publish carries a ttl (the SDK's publishCustom
+        // defaults it to FIVE_MINUTES); prompt/tag are omitted for this method.
+        private const val APPROVE_SESSION_TTL = FIVE_MINUTES
         private const val SESSION_REQUEST_RES_TTL = 900
         private const val SESSION_REQUEST_RES_TAG = 1109
         private const val SESSION_PING_RES_TTL = ONE_DAY
         private const val SESSION_PING_RES_TAG = 1115
+        private const val SESSION_PING_REQ_TTL = ONE_DAY
+        private const val SESSION_PING_REQ_TAG = 1114
         private const val SESSION_DELETE_REQ_TTL = ONE_DAY
         private const val SESSION_DELETE_REQ_TAG = 1112
         private const val SESSION_DELETE_RES_TTL = ONE_DAY

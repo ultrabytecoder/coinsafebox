@@ -168,9 +168,11 @@ class WcCrypto internal constructor(
                     ?: throw WcProtocolException("No symmetric key for topic: $topic")
                 chachaOpen(symKey, iv, sealed).decodeToString()
             }
-            1 -> throw WcProtocolException("type-1 envelope not supported in this phase")
-            2 -> bytes.copyOfRange(1, bytes.size).decodeToString()
-            else -> throw WcProtocolException("Unknown envelope type: $type")
+            // Only type 0 (ChaCha20-Poly1305) is used on relay session/pairing topics. The spec
+            // also defines type 1 and type 2 (plaintext), but the wallet never receives them;
+            // accepting type 2 would let anyone who knows the topic inject unauthenticated
+            // JSON-RPC, so reject every non-zero type.
+            else -> throw WcProtocolException("Unsupported envelope type: $type")
         }
     }
 

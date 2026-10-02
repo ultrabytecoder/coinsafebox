@@ -155,6 +155,8 @@ class WcSessionManagerTest {
         pairingTopic: String,
         proposerPubHex: String,
         proposalId: Long,
+        chains: List<String> = listOf("eip155:1"),
+        expiryOffsetSeconds: Long = 300,
     ): String {
         val params = buildJsonObject {
             put("id", proposalId)
@@ -169,7 +171,7 @@ class WcSessionManagerTest {
             })
             put("requiredNamespaces", buildJsonObject {
                 put("eip155", buildJsonObject {
-                    put("chains", kotlinx.serialization.json.JsonArray(listOf(JsonPrimitive("eip155:1"))))
+                    put("chains", kotlinx.serialization.json.JsonArray(chains.map { JsonPrimitive(it) }))
                     put("methods", kotlinx.serialization.json.JsonArray(
                         listOf(JsonPrimitive("personal_sign"), JsonPrimitive("eth_sendTransaction"))
                     ))
@@ -177,7 +179,7 @@ class WcSessionManagerTest {
                 })
             })
             put("optionalNamespaces", buildJsonObject {})
-            put("expiry", (kotlin.time.Clock.System.now().toEpochMilliseconds() / 1000 + 300).toInt())
+            put("expiry", (kotlin.time.Clock.System.now().toEpochMilliseconds() / 1000 + expiryOffsetSeconds).toInt())
         }
         val request = WcJsonRpc.formatJsonRpcRequest("wc_sessionPropose", params, proposalId)
         return crypto.encodeEnvelope(pairingTopic, request.toString())
@@ -387,5 +389,342 @@ class WcSessionManagerTest {
             it["params"]!!.jsonObject["topic"]!!.jsonPrimitive.content == sessionTopic
         })
         manager2.stop()
+    }
+
+    private class Settled(
+        val session: WcSession,
+        val crypto: WcCrypto,
+        val relay: AutoRelayTransport,
+        val manager: WcSessionManager,
+        val account: String,
+    )
+
+    /** Runs the full pair→propose→approve→settle flow and returns the established session. */
+    private suspend fun settledSession(
+        scheduler: TestCoroutineScheduler,
+        handler: WcSessionRequestHandler? = null,
+    ): Settled {
+        val crypto = newCrypto()
+        val relay = AutoRelayTransport()
+        val relayClient = buildRelay(crypto, relay, scheduler)
+        val manager = buildManager(crypto, relayClient, handler, scheduler)
+        manager.start()
+        val (pairingTopic, uri) = dappPairing(crypto)
+        manager.pair(uri)
+        val proposerKeyPair = crypto.generateX25519KeyPair()
+        val proposerPubHex = WcEncoding.hexEncode(proposerKeyPair.publicKey)
+        val proposalDeferred = CompletableDeferred<WcProposal>()
+        manager.onProposal = { proposalDeferred.complete(it) }
+        val proposalId = 9001L
+        relay.pushTopic(pairingTopic, proposeEnvelope(crypto, pairingTopic, proposerPubHex, proposalId), "p1")
+        proposalDeferred.await()
+        val account = "eip155:1:0x3333333333333333333333333333333333333333"
+        val session = manager.approve(proposalId, listOf(account))
+        val approvedDeferred = CompletableDeferred<WcSession>()
+        manager.onSessionApproved = { approvedDeferred.complete(it) }
+        val settleResult = WcJsonRpc.formatJsonRpcResult(session.settleRequestId!!, JsonPrimitive(true))
+        relay.pushTopic(session.topic, crypto.encodeEnvelope(session.topic, settleResult.toString()), "s1")
+        approvedDeferred.await()
+        return Settled(session, crypto, relay, manager, account)
+    }
+
+    @Test
+    fun approveRejectsWhenRequiredChainNotCovered() = runTest {
+        val crypto = newCrypto()
+        val relay = AutoRelayTransport()
+        val relayClient = buildRelay(crypto, relay, testScheduler)
+        val manager = buildManager(crypto, relayClient, null, testScheduler)
+        manager.start()
+        val (pairingTopic, uri) = dappPairing(crypto)
+        manager.pair(uri)
+        val proposerKeyPair = crypto.generateX25519KeyPair()
+        val proposerPubHex = WcEncoding.hexEncode(proposerKeyPair.publicKey)
+        val proposalDeferred = CompletableDeferred<WcProposal>()
+        manager.onProposal = { proposalDeferred.complete(it) }
+        val proposalId = 9301L
+        relay.pushTopic(
+            pairingTopic,
+            proposeEnvelope(crypto, pairingTopic, proposerPubHex, proposalId, chains = listOf("eip155:1", "eip155:137")),
+            "p1",
+        )
+        proposalDeferred.await()
+
+        // Requires both eip155:1 and eip155:137, but only a chain-1 account is selected.
+        val ex = runCatching {
+            manager.approve(proposalId, listOf("eip155:1:0x1111111111111111111111111111111111111111"))
+        }.exceptionOrNull()
+        assertTrue(ex is WcProtocolException, "expected WcProtocolException, got $ex")
+        manager.stop()
+    }
+
+    @Test
+    fun dappSessionUpdateIsRejected() = runTest {
+        val s = settledSession(testScheduler)
+        val sessionTopic = s.session.topic
+        val originalNamespaces = s.manager.getSession(sessionTopic)!!.namespaces
+        val updateId = 9401L
+        val updateRequest = WcJsonRpc.formatJsonRpcRequest(
+            "wc_sessionUpdate",
+            buildJsonObject {
+                put("namespaces", buildJsonObject {
+                    put("eip155", buildJsonObject {
+                        put("accounts", kotlinx.serialization.json.JsonArray(listOf(JsonPrimitive("eip155:1:0x9999"))))
+                        put("methods", kotlinx.serialization.json.JsonArray(listOf(JsonPrimitive("personal_sign"))))
+                        put("events", kotlinx.serialization.json.JsonArray(emptyList()))
+                    })
+                })
+            },
+            updateId,
+        )
+        s.relay.pushTopic(sessionTopic, s.crypto.encodeEnvelope(sessionTopic, updateRequest.toString()), "u1")
+        val publish = awaitValue {
+            s.relay.frames("irn_publish").lastOrNull {
+                it["params"]!!.jsonObject["topic"]!!.jsonPrimitive.content == sessionTopic
+            }
+        }
+        val envelope = publish["params"]!!.jsonObject["message"]!!.jsonPrimitive.content
+        val respJson = json.parseToJsonElement(s.crypto.decodeEnvelope(sessionTopic, envelope)).jsonObject
+        assertEquals(updateId, respJson["id"]!!.jsonPrimitive.long)
+        val error = respJson["error"]!!.jsonObject
+        assertEquals(3003, error["code"]!!.jsonPrimitive.long.toInt())
+        assertEquals(originalNamespaces, s.manager.getSession(sessionTopic)!!.namespaces)
+        s.manager.stop()
+    }
+
+    @Test
+    fun approveRejectsExpiredProposal() = runTest {
+        val crypto = newCrypto()
+        val relay = AutoRelayTransport()
+        val relayClient = buildRelay(crypto, relay, testScheduler)
+        val manager = buildManager(crypto, relayClient, null, testScheduler)
+        manager.start()
+        val (pairingTopic, uri) = dappPairing(crypto)
+        manager.pair(uri)
+        val proposerKeyPair = crypto.generateX25519KeyPair()
+        val proposerPubHex = WcEncoding.hexEncode(proposerKeyPair.publicKey)
+        val proposalDeferred = CompletableDeferred<WcProposal>()
+        manager.onProposal = { proposalDeferred.complete(it) }
+        val proposalId = 9501L
+        relay.pushTopic(
+            pairingTopic,
+            proposeEnvelope(crypto, pairingTopic, proposerPubHex, proposalId, expiryOffsetSeconds = -10),
+            "p1",
+        )
+        proposalDeferred.await()
+
+        val ex = runCatching {
+            manager.approve(proposalId, listOf("eip155:1:0x1111111111111111111111111111111111111111"))
+        }.exceptionOrNull()
+        assertTrue(ex is WcProtocolException, "expected WcProtocolException for expired proposal, got $ex")
+        assertNull(manager.getProposal(proposalId))
+        manager.stop()
+    }
+
+    @Test
+    fun expiredSessionsArePrunedOnLoad() = runTest {
+        val repository = FakeWcSessionRepository()
+        val crypto = newCrypto()
+        val topic = "0" + "1".repeat(63)
+        // Give the crypto a key for the topic so it is a load candidate, but set a past expiry.
+        crypto.setSymKey(crypto.generateRandomBytes32(), topic)
+        repository.upsert(
+            WcSession(
+                topic = topic,
+                pairingTopic = "pairing",
+                proposerPublicKey = "0xabc",
+                proposerMetadata = WcMetadata("d", "d", "https://d"),
+                responderPublicKey = "0xdef",
+                responderMetadata = WcMetadata("w", "w", "https://w"),
+                namespaces = emptyMap(),
+                expiry = (kotlin.time.Clock.System.now().toEpochMilliseconds() / 1000 - 10),
+                acknowledged = true,
+                settleRequestId = null,
+            )
+        )
+
+        val relay = AutoRelayTransport()
+        val relayClient = buildRelay(crypto, relay, testScheduler)
+        val manager = buildManager(crypto, relayClient, null, testScheduler, repository)
+        manager.start()
+
+        // An expired session must not be loaded, and must be pruned from the repository.
+        assertNull(manager.getSession(topic))
+        assertNull(repository.get(topic))
+        manager.stop()
+    }
+
+    @Test
+    fun approveRejectsRequiredNonEvmNamespace() = runTest {
+        val crypto = newCrypto()
+        val relay = AutoRelayTransport()
+        val relayClient = buildRelay(crypto, relay, testScheduler)
+        val manager = buildManager(crypto, relayClient, null, testScheduler)
+        manager.start()
+        val (pairingTopic, uri) = dappPairing(crypto)
+        manager.pair(uri)
+        val proposerKeyPair = crypto.generateX25519KeyPair()
+        val proposerPubHex = WcEncoding.hexEncode(proposerKeyPair.publicKey)
+        val proposalDeferred = CompletableDeferred<WcProposal>()
+        manager.onProposal = { proposalDeferred.complete(it) }
+        val proposalId = 9601L
+
+        // Requires both eip155 and a required cosmos namespace; the wallet is EVM-only.
+        val nowSec = (kotlin.time.Clock.System.now().toEpochMilliseconds() / 1000).toInt()
+        val params = buildJsonObject {
+            put("id", proposalId)
+            put("proposer", buildJsonObject {
+                put("publicKey", proposerPubHex)
+                put("metadata", buildJsonObject { put("name", "D"); put("description", "d"); put("url", "https://d") })
+            })
+            put("requiredNamespaces", buildJsonObject {
+                put("eip155", buildJsonObject {
+                    put("chains", kotlinx.serialization.json.JsonArray(listOf(JsonPrimitive("eip155:1"))))
+                    put("methods", kotlinx.serialization.json.JsonArray(listOf(JsonPrimitive("personal_sign"))))
+                    put("events", kotlinx.serialization.json.JsonArray(listOf(JsonPrimitive("accountsChanged"))))
+                })
+                put("cosmos", buildJsonObject {
+                    put("chains", kotlinx.serialization.json.JsonArray(listOf(JsonPrimitive("cosmos:cosmoshub-4"))))
+                    put("methods", kotlinx.serialization.json.JsonArray(listOf(JsonPrimitive("cosmos_sign"))))
+                    put("events", kotlinx.serialization.json.JsonArray(listOf(JsonPrimitive("chainChanged"))))
+                })
+            })
+            put("optionalNamespaces", buildJsonObject {})
+            put("expiry", nowSec + 300)
+        }
+        val request = WcJsonRpc.formatJsonRpcRequest("wc_sessionPropose", params, proposalId)
+        relay.pushTopic(pairingTopic, crypto.encodeEnvelope(pairingTopic, request.toString()), "p1")
+        proposalDeferred.await()
+
+        // Even with a valid eip155 account selected, the required cosmos namespace is unsatisfiable.
+        val ex = runCatching {
+            manager.approve(proposalId, listOf("eip155:1:0x1111111111111111111111111111111111111111"))
+        }.exceptionOrNull()
+        assertTrue(ex is WcProtocolException, "expected WcProtocolException for required non-EVM namespace, got $ex")
+        manager.stop()
+    }
+
+    @Test
+    fun sessionRequestOnUnapprovedChainIsRejected() = runTest {
+        val handler = FakeHandler()
+        val s = settledSession(testScheduler, handler)
+        val sessionTopic = s.session.topic
+        // The session only covers eip155:1; a request on eip155:137 must be rejected and must
+        // never reach the request handler.
+        val requestId = 9701L
+        val request = WcJsonRpc.formatJsonRpcRequest(
+            "wc_sessionRequest",
+            buildJsonObject {
+                put("request", buildJsonObject {
+                    put("method", "personal_sign")
+                    put("params", buildJsonObject { put("message", "0x1234") })
+                })
+                put("chainId", "eip155:137")
+            },
+            requestId,
+        )
+        s.relay.pushTopic(sessionTopic, s.crypto.encodeEnvelope(sessionTopic, request.toString()), "r1")
+        val publish = awaitValue {
+            s.relay.frames("irn_publish").lastOrNull {
+                it["params"]!!.jsonObject["topic"]!!.jsonPrimitive.content == sessionTopic
+            }
+        }
+        val envelope = publish["params"]!!.jsonObject["message"]!!.jsonPrimitive.content
+        val respJson = json.parseToJsonElement(s.crypto.decodeEnvelope(sessionTopic, envelope)).jsonObject
+        assertEquals(requestId, respJson["id"]!!.jsonPrimitive.long)
+        assertEquals(5002, respJson["error"]!!.jsonObject["code"]!!.jsonPrimitive.long.toInt())
+        assertEquals(0, handler.callCount, "handler must not be invoked for an unapproved chain")
+        s.manager.stop()
+    }
+
+    @Test
+    fun sessionRequestWithUnapprovedMethodIsRejected() = runTest {
+        val handler = FakeHandler()
+        val s = settledSession(testScheduler, handler)
+        val sessionTopic = s.session.topic
+        // eth_signCustom is not in SUPPORTED_METHODS, so it was never approved in the namespace.
+        val requestId = 9702L
+        val request = WcJsonRpc.formatJsonRpcRequest(
+            "wc_sessionRequest",
+            buildJsonObject {
+                put("request", buildJsonObject {
+                    put("method", "eth_signCustom")
+                    put("params", buildJsonObject { put("message", "0x1234") })
+                })
+                put("chainId", "eip155:1")
+            },
+            requestId,
+        )
+        s.relay.pushTopic(sessionTopic, s.crypto.encodeEnvelope(sessionTopic, request.toString()), "r2")
+        val publish = awaitValue {
+            s.relay.frames("irn_publish").lastOrNull {
+                it["params"]!!.jsonObject["topic"]!!.jsonPrimitive.content == sessionTopic
+            }
+        }
+        val envelope = publish["params"]!!.jsonObject["message"]!!.jsonPrimitive.content
+        val respJson = json.parseToJsonElement(s.crypto.decodeEnvelope(sessionTopic, envelope)).jsonObject
+        assertEquals(requestId, respJson["id"]!!.jsonPrimitive.long)
+        assertEquals(5002, respJson["error"]!!.jsonObject["code"]!!.jsonPrimitive.long.toInt())
+        assertEquals(0, handler.callCount, "handler must not be invoked for an unapproved method")
+        s.manager.stop()
+    }
+
+    @Test
+    fun extendWithPastExpiryDoesNotShrinkSession() = runTest {
+        val s = settledSession(testScheduler)
+        val sessionTopic = s.session.topic
+        val originalExpiry = s.manager.getSession(sessionTopic)!!.expiry
+        // A malicious/buggy dApp sends a past expiry (year 2000). The session must not be
+        // shrunk to (or killed by) that value.
+        val extendId = 9801L
+        val request = WcJsonRpc.formatJsonRpcRequest(
+            "wc_sessionExtend",
+            buildJsonObject { put("expiry", 946684800) },
+            extendId,
+        )
+        s.relay.pushTopic(sessionTopic, s.crypto.encodeEnvelope(sessionTopic, request.toString()), "e1")
+        val publish = awaitValue {
+            s.relay.frames("irn_publish").lastOrNull {
+                it["params"]!!.jsonObject["topic"]!!.jsonPrimitive.content == sessionTopic
+            }
+        }
+        val envelope = publish["params"]!!.jsonObject["message"]!!.jsonPrimitive.content
+        val respJson = json.parseToJsonElement(s.crypto.decodeEnvelope(sessionTopic, envelope)).jsonObject
+        assertEquals(extendId, respJson["id"]!!.jsonPrimitive.long)
+        assertNotNull(respJson["result"], "extend must still succeed (not error) for a past expiry")
+        val after = s.manager.getSession(sessionTopic)!!
+        assertEquals(originalExpiry, after.expiry, "a past proposed expiry must not shrink the session")
+        val now = kotlin.time.Clock.System.now().toEpochMilliseconds() / 1000
+        assertTrue(after.expiry >= now + 1, "expiry must remain in the future, got ${after.expiry} (now=$now)")
+        s.manager.stop()
+    }
+
+    @Test
+    fun malformedSessionRequestWithIdGetsParseError() = runTest {
+        val s = settledSession(testScheduler)
+        val sessionTopic = s.session.topic
+        val requestId = 9901L
+        // A valid JSON-RPC wc_sessionRequest frame, but the inner request omits "method".
+        // With a valid id present, the wallet must answer a parse error, not drop it silently.
+        val request = WcJsonRpc.formatJsonRpcRequest(
+            "wc_sessionRequest",
+            buildJsonObject {
+                put("request", buildJsonObject {
+                    put("params", buildJsonObject { put("message", "0x1234") })
+                })
+                put("chainId", "eip155:1")
+            },
+            requestId,
+        )
+        s.relay.pushTopic(sessionTopic, s.crypto.encodeEnvelope(sessionTopic, request.toString()), "m1")
+        val publish = awaitValue {
+            s.relay.frames("irn_publish").lastOrNull {
+                it["params"]!!.jsonObject["topic"]!!.jsonPrimitive.content == sessionTopic
+            }
+        }
+        val envelope = publish["params"]!!.jsonObject["message"]!!.jsonPrimitive.content
+        val respJson = json.parseToJsonElement(s.crypto.decodeEnvelope(sessionTopic, envelope)).jsonObject
+        assertEquals(requestId, respJson["id"]!!.jsonPrimitive.long)
+        assertEquals(-32700, respJson["error"]!!.jsonObject["code"]!!.jsonPrimitive.long.toInt())
+        s.manager.stop()
     }
 }

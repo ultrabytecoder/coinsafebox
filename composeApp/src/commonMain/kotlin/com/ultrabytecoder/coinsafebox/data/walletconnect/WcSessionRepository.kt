@@ -25,11 +25,20 @@ internal class SqlWcSessionRepository(
     private val namespacesSerializer = MapSerializer(String.serializer(), WcNamespace.serializer())
 
     override suspend fun getAll(): List<WcSession> = withContext(Dispatchers.IO) {
-        queries.selectAllWcSessions().executeAsList().map { it.toWcSession() }
+        queries.selectAllWcSessions().executeAsList().mapNotNull { row ->
+            // A corrupt row (e.g. partial write / bad JSON) must not take down the whole load;
+            // drop it and move on.
+            runCatching { row.toWcSession() }.getOrElse {
+                println("WcSessionRepository: dropping corrupt session row ${row.topic} — ${it.message}")
+                runCatching { queries.deleteWcSessionByTopic(row.topic) }
+                null
+            }
+        }
     }
 
     override suspend fun get(topic: String): WcSession? = withContext(Dispatchers.IO) {
-        queries.selectWcSessionByTopic(topic).executeAsOneOrNull()?.toWcSession()
+        queries.selectWcSessionByTopic(topic).executeAsOneOrNull()
+            ?.let { row -> runCatching { row.toWcSession() }.getOrNull() }
     }
 
     override suspend fun upsert(session: WcSession) {

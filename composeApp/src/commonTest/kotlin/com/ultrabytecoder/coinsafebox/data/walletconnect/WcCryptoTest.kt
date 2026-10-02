@@ -178,15 +178,24 @@ class WcCryptoTest {
     }
 
     @Test
-    fun envelope_type2_decode() {
+    fun envelope_nonType0_rejected() {
         val crypto = newCrypto()
-        val plaintext = """{"hello":"world"}"""
-        val type2Bytes = ByteArray(1 + plaintext.encodeToByteArray().size)
-        type2Bytes[0] = 0x02
-        plaintext.encodeToByteArray().copyInto(type2Bytes, 1)
-        val encoded = WcEncoding.base64Encode(type2Bytes)
-        val decoded = crypto.decodeEnvelope("dummy-topic", encoded)
-        assertEquals(plaintext, decoded)
+        val payload = """{"hello":"world"}"""
+        val payloadBytes = payload.encodeToByteArray()
+        // Only type 0 (ChaCha20-Poly1305) is valid on relay topics. The spec also defines type 1
+        // and type 2 (plaintext), but accepting them would let a topic observer inject
+        // unauthenticated JSON-RPC, so every non-zero type must be rejected.
+        for (type in intArrayOf(1, 2, 7)) {
+            val bytes = ByteArray(1 + payloadBytes.size)
+            bytes[0] = type.toByte()
+            payloadBytes.copyInto(bytes, 1)
+            val encoded = WcEncoding.base64Encode(bytes)
+            val ex = runCatching { crypto.decodeEnvelope("dummy-topic", encoded) }.exceptionOrNull()
+            assertTrue(
+                ex is WcProtocolException,
+                "type-$type envelope must be rejected with WcProtocolException, got $ex"
+            )
+        }
     }
 
     @Test
