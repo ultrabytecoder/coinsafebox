@@ -29,6 +29,11 @@ val kkEtherscanKey = localProperties.getProperty(
     if (kkIsTestnet) "etherscan.testnet.api.key" else "etherscan.mainnet.api.key", ""
 )
 val kkWcProjectId = localProperties.getProperty("wc.project.id", "")
+// Desktop app version, read from VERSION_NAME in gradle.properties (the single
+// source of truth shared with Android). Baked into the jar at build time
+// (DesktopBuildConfig.VERSION) and reused for the native installer so the
+// runtime "About" version always matches the packaged version.
+val kkVersion = findProperty("VERSION_NAME") as String
 // Write the generated constant eagerly at configuration time so the srcDir below
 // is always valid before compilation. Content is deterministic per (network, key),
 // so Gradle's input-aware up-to-date check still skips recompiles when unchanged.
@@ -42,6 +47,7 @@ File(kkGenDir, "DesktopBuildConfig.kt").writeText(
         const val IS_TESTNET = ${kkIsTestnet}
         const val ETHERSCAN_API_KEY = "${kkEtherscanKey.replace("\\", "\\\\").replace("\"", "\\\"")}"
         const val WC_PROJECT_ID = "${kkWcProjectId.replace("\\", "\\\\").replace("\"", "\\\"")}"
+        const val VERSION = "${kkVersion.replace("\\", "\\\\").replace("\"", "\\\"")}"
     }
     """.trimIndent()
 )
@@ -259,8 +265,8 @@ android {
         applicationId = "com.ultrabytecoder.coinsafebox"
         minSdk = libs.versions.android.minSdk.get().toInt()
         targetSdk = libs.versions.android.targetSdk.get().toInt()
-        versionCode = 4
-        versionName = "1.2.0"
+        versionCode = (findProperty("VERSION_CODE") as String).toInt()
+        versionName = findProperty("VERSION_NAME") as String
         buildConfigField("String", "WC_PROJECT_ID", "\"${localProperties.getProperty("wc.project.id", "")}\"")
     }
 
@@ -386,7 +392,7 @@ compose.desktop {
             targetFormats(TargetFormat.Deb, TargetFormat.Rpm, TargetFormat.Msi, TargetFormat.Dmg)
             // Suffix per network so testnet and mainnet installers coexist.
             packageName = "CoinSafeBox-$kkNetwork"
-            packageVersion = "1.1.1"
+            packageVersion = kkVersion
             windows {
                 menuGroup = "CoinSafeBox"
                 shortcut = true
