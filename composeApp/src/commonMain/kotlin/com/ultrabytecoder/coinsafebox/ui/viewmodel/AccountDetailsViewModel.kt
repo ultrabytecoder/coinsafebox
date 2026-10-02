@@ -3,7 +3,7 @@ package com.ultrabytecoder.coinsafebox.ui.viewmodel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.ultrabytecoder.coinsafebox.data.SettingsKeys
-import com.ultrabytecoder.coinsafebox.data.SettingsStorage
+import com.ultrabytecoder.coinsafebox.data.SettingsStore
 import com.ultrabytecoder.coinsafebox.domain.model.AccountInfo
 import com.ultrabytecoder.coinsafebox.domain.model.FiatCurrency
 import com.ultrabytecoder.coinsafebox.domain.model.TransactionInfo
@@ -11,12 +11,16 @@ import com.ultrabytecoder.coinsafebox.domain.provider.FiatQuoteProvider
 import com.ultrabytecoder.coinsafebox.domain.repository.AccountRepository
 import com.ultrabytecoder.coinsafebox.domain.repository.TransactionRepository
 import com.ultrabytecoder.coinsafebox.domain.repository.WalletRepository
+import com.ultrabytecoder.coinsafebox.domain.usecase.DeleteAccountUseCase
 import com.ultrabytecoder.coinsafebox.domain.usecase.GetAccountAddressUseCase
 import com.ultrabytecoder.coinsafebox.domain.usecase.GetAccountsUseCase
 import com.ultrabytecoder.coinsafebox.ui.util.formatFiat
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
@@ -35,6 +39,10 @@ data class AccountDetailUiState(
     val error: String? = null
 )
 
+sealed class AccountDetailsEvent {
+    data class NavigateToAccountsList(val walletId: Long) : AccountDetailsEvent()
+}
+
 class AccountDetailsViewModel(
     val accountId: String,
     val preselectedTokenId: String?,
@@ -43,12 +51,16 @@ class AccountDetailsViewModel(
     private val accountRepository: AccountRepository,
     private val transactionRepository: TransactionRepository,
     private val walletRepository: WalletRepository,
-    settingsStorage: SettingsStorage,
+    private val deleteAccountUseCase: DeleteAccountUseCase,
+    settingsStorage: SettingsStore,
     private val quoteProvider: FiatQuoteProvider
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(AccountDetailUiState())
     val uiState: StateFlow<AccountDetailUiState> = _uiState.asStateFlow()
+
+    private val _events = MutableSharedFlow<AccountDetailsEvent>(extraBufferCapacity = 4)
+    val events: SharedFlow<AccountDetailsEvent> = _events.asSharedFlow()
 
     private val _isReadOnly = MutableStateFlow(false)
     val isReadOnly: StateFlow<Boolean> = _isReadOnly.asStateFlow()
@@ -125,6 +137,18 @@ class AccountDetailsViewModel(
 
     fun clearError() {
         _uiState.value = _uiState.value.copy(error = null)
+    }
+
+    fun removeAccount() {
+        val parent = _uiState.value.parent ?: return
+        viewModelScope.launch {
+            try {
+                deleteAccountUseCase(parent.id)
+                _events.emit(AccountDetailsEvent.NavigateToAccountsList(parent.walletId))
+            } catch (e: Exception) {
+                _uiState.value = _uiState.value.copy(error = e.message ?: "Failed to remove account")
+            }
+        }
     }
 
     private suspend fun loadTransactions(accountId: String) {

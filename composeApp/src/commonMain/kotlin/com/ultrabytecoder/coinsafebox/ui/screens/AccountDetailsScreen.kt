@@ -28,6 +28,8 @@ import compose.icons.FeatherIcons
 import compose.icons.feathericons.ArrowLeft
 import compose.icons.feathericons.Check
 import compose.icons.feathericons.Copy
+import compose.icons.feathericons.MoreVertical
+import compose.icons.feathericons.Trash2
 import com.ultrabytecoder.coinsafebox.util.QrEncoder
 import com.ultrabytecoder.coinsafebox.domain.model.AccountInfo
 import com.ultrabytecoder.coinsafebox.domain.model.AccountType
@@ -36,6 +38,7 @@ import com.ultrabytecoder.coinsafebox.navigation.Screen
 import com.ultrabytecoder.coinsafebox.ui.components.ReadOnlyBadge
 import com.ultrabytecoder.coinsafebox.ui.components.TransactionItem
 import com.ultrabytecoder.coinsafebox.ui.theme.AuroraPrimary
+import com.ultrabytecoder.coinsafebox.ui.viewmodel.AccountDetailsEvent
 import com.ultrabytecoder.coinsafebox.ui.viewmodel.AccountDetailsViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -53,6 +56,34 @@ fun AccountDetailsScreen(
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val selectedFiatBalance by viewModel.selectedFiatBalance.collectAsStateWithLifecycle()
     val isReadOnly by viewModel.isReadOnly.collectAsStateWithLifecycle()
+
+    var showRemoveDialog by remember { mutableStateOf(false) }
+
+    LaunchedEffect(Unit) {
+        viewModel.events.collect { event ->
+            when (event) {
+                is AccountDetailsEvent.NavigateToAccountsList -> {
+                    navController.navigate(Screen.AccountsList(event.walletId)) {
+                        popUpTo(0) { inclusive = true }
+                        launchSingleTop = true
+                    }
+                }
+            }
+        }
+    }
+
+    if (showRemoveDialog) {
+        account?.let { acc ->
+            RemoveAccountConfirmationDialog(
+                accountName = acc.name,
+                onConfirm = {
+                    showRemoveDialog = false
+                    viewModel.removeAccount()
+                },
+                onDismiss = { showRemoveDialog = false }
+            )
+        }
+    }
 
     Scaffold(
         topBar = {
@@ -74,6 +105,33 @@ fun AccountDetailsScreen(
                 navigationIcon = {
                     IconButton(onClick = { navController.popBackStack() }) {
                         Icon(FeatherIcons.ArrowLeft, contentDescription = "Back")
+                    }
+                },
+                actions = {
+                    var menuExpanded by remember { mutableStateOf(false) }
+                    Box {
+                        IconButton(onClick = { menuExpanded = true }) {
+                            Icon(FeatherIcons.MoreVertical, contentDescription = "More")
+                        }
+                        DropdownMenu(
+                            expanded = menuExpanded,
+                            onDismissRequest = { menuExpanded = false }
+                        ) {
+                            DropdownMenuItem(
+                                text = { Text("Remove Account") },
+                                onClick = {
+                                    menuExpanded = false
+                                    showRemoveDialog = true
+                                },
+                                leadingIcon = {
+                                    Icon(
+                                        FeatherIcons.Trash2,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                }
+                            )
+                        }
                     }
                 }
             )
@@ -173,6 +231,35 @@ fun AccountDetailsScreen(
             }
         }
     }
+}
+
+@Composable
+private fun RemoveAccountConfirmationDialog(
+    accountName: String,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Remove Account") },
+        text = {
+            Text(
+                "Are you sure you want to remove \"$accountName\"? " +
+                    "This account, all of its tokens, and their transaction history " +
+                    "will be permanently removed."
+            )
+        },
+        confirmButton = {
+            TextButton(onClick = onConfirm) {
+                Text("Remove", color = MaterialTheme.colorScheme.error)
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel")
+            }
+        }
+    )
 }
 
 @Composable

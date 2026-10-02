@@ -26,6 +26,7 @@ import com.ultrabytecoder.coinsafebox.domain.usecase.GetAccountAddressUseCase
 import com.ultrabytecoder.coinsafebox.domain.usecase.GetAccountsUseCase
 import com.ultrabytecoder.coinsafebox.domain.usecase.GetWalletsUseCase
 import com.ultrabytecoder.coinsafebox.domain.usecase.GetMnemonicUseCase
+import com.ultrabytecoder.coinsafebox.domain.usecase.DeleteAccountUseCase
 import com.ultrabytecoder.coinsafebox.domain.usecase.DeleteWalletUseCase
 import com.ultrabytecoder.coinsafebox.domain.usecase.RenameWalletUseCase
 import com.ultrabytecoder.coinsafebox.domain.usecase.ReconcileAddressesUseCase
@@ -90,6 +91,7 @@ fun appModule(networkConfig: NetworkConfig) = module {
     factory { SendUseCase(get(), get(), get(), get(), get(), get()) }
     factory { GetAccountAddressUseCase(get(), get(), get(), get(), get(), get()) }
     factory { GetWalletsUseCase(get()) }
+    factory { DeleteAccountUseCase(get(), get(), get()) }
     factory { DeleteWalletUseCase(get(), get(), get(), get()) }
     factory { RenameWalletUseCase(get()) }
     factory { RemoveMasterKeyUseCase(get(), get(), get()) }

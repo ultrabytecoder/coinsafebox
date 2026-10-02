@@ -84,6 +84,7 @@ import com.ultrabytecoder.coinsafebox.domain.usecase.AddTokenUseCase
 import com.ultrabytecoder.coinsafebox.domain.usecase.CreateTokenUseCase
 import com.ultrabytecoder.coinsafebox.domain.usecase.GetAccountAddressUseCase
 import com.ultrabytecoder.coinsafebox.domain.usecase.GetMnemonicUseCase
+import com.ultrabytecoder.coinsafebox.domain.usecase.DeleteAccountUseCase
 import com.ultrabytecoder.coinsafebox.domain.usecase.DeleteWalletUseCase
 import com.ultrabytecoder.coinsafebox.domain.usecase.RenameWalletUseCase
 import com.ultrabytecoder.coinsafebox.domain.usecase.RemoveMasterKeyUseCase
@@ -229,12 +230,14 @@ fun App() {
                 val accountRepository: com.ultrabytecoder.coinsafebox.domain.repository.AccountRepository = koinInject()
                 val transactionRepository: TransactionRepository = koinInject()
                 val walletRepository: com.ultrabytecoder.coinsafebox.domain.repository.WalletRepository = koinInject()
+                val deleteAccountUseCase: DeleteAccountUseCase = koinInject()
                 val settingsStorage: com.ultrabytecoder.coinsafebox.data.SettingsStorage = koinInject()
                 val quoteProvider: FiatQuoteProvider = koinInject()
                 val viewModel = rememberDisposableViewModel(route.accountId, route.preselectedTokenId) {
                     AccountDetailsViewModel(
                         route.accountId, route.preselectedTokenId, getAccounts, getAccountAddress,
-                        accountRepository, transactionRepository, walletRepository, settingsStorage, quoteProvider
+                        accountRepository, transactionRepository, walletRepository, deleteAccountUseCase,
+                        settingsStorage, quoteProvider
                     )
                 }
                 AccountDetailsScreen(navController, viewModel)
