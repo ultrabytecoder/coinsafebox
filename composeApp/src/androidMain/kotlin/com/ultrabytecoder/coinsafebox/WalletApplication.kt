@@ -63,7 +63,7 @@ class MyApplication : Application(), KoinComponent {
             override fun onActivityDestroyed(activity: Activity) {}
         })
 
-        val networkConfig = if (BuildConfig.IS_TESTNET) NetworkConfig.testnet(BuildConfig.ETHERSCAN_API_KEY) else NetworkConfig.mainnet(BuildConfig.ETHERSCAN_API_KEY)
+        val networkConfig = if (BuildConfig.IS_TESTNET) NetworkConfig.testnet(BuildConfig.ETHERSCAN_API_KEY, BuildConfig.WC_PROJECT_ID) else NetworkConfig.mainnet(BuildConfig.ETHERSCAN_API_KEY, BuildConfig.WC_PROJECT_ID)
 
         startKoin {
             androidLogger(Level.ERROR)

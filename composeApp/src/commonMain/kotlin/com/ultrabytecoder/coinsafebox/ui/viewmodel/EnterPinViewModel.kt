@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.ultrabytecoder.coinsafebox.data.SettingsKeys
 import com.ultrabytecoder.coinsafebox.data.SettingsStorage
+import com.ultrabytecoder.coinsafebox.data.walletconnect.WcController
 import com.ultrabytecoder.coinsafebox.domain.repository.PinConfig
 import com.ultrabytecoder.coinsafebox.domain.repository.PinState
 import com.ultrabytecoder.coinsafebox.domain.repository.SecurityMethod
@@ -11,6 +12,7 @@ import com.ultrabytecoder.coinsafebox.domain.repository.VerifyResult
 import com.ultrabytecoder.coinsafebox.domain.usecase.CheckPinStatusUseCase
 import com.ultrabytecoder.coinsafebox.domain.usecase.GetSecurityMethodUseCase
 import com.ultrabytecoder.coinsafebox.domain.usecase.GetWalletsUseCase
+import com.ultrabytecoder.coinsafebox.domain.usecase.ReconcileAddressesUseCase
 import com.ultrabytecoder.coinsafebox.domain.usecase.SyncUseCase
 import com.ultrabytecoder.coinsafebox.domain.usecase.VerifyPinUseCase
 import com.ultrabytecoder.coinsafebox.providers.SyncMode
@@ -47,7 +49,9 @@ class EnterPinViewModel(
     private val syncUseCase: SyncUseCase,
     checkPinStatus: CheckPinStatusUseCase,
     getSecurityMethod: GetSecurityMethodUseCase,
-    settingsStorage: SettingsStorage
+    settingsStorage: SettingsStorage,
+    private val wcController: WcController,
+    private val reconcileAddresses: ReconcileAddressesUseCase
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(
@@ -135,6 +139,18 @@ class EnterPinViewModel(
     private suspend fun navigateAfterUnlock() {
         val walletId = getWalletsUseCase().first().firstOrNull()?.id
         if (walletId != null) {
+            // Backfill any addresses missing from pre-persist-at-creation accounts.
+            // No-op when all addresses are already present.
+            try {
+                reconcileAddresses(walletId)
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                println("ReconcileAddresses failed for wallet $walletId: ${e.message}")
+            }
+            // Reconnect the WalletConnect relay (dropped on lock) on its own
+            // app-lifetime scope so it survives this screen being disposed.
+            wcController.start()
             syncUseCase(viewModelScope, walletId, SyncMode.FULL)
             _events.emit(EnterPinEvent.NavigateToAccountsList(walletId))
         } else {

@@ -188,3 +188,32 @@ DELETE FROM transactions WHERE account_id = ?;
 
 selectTransactionById:
 SELECT * FROM transactions WHERE id = ?;
+
+CREATE TABLE wc_sessions (
+    topic TEXT PRIMARY KEY NOT NULL,
+    pairing_topic TEXT NOT NULL,
+    proposer_public_key TEXT NOT NULL,
+    proposer_metadata TEXT NOT NULL,
+    responder_public_key TEXT NOT NULL,
+    responder_metadata TEXT NOT NULL,
+    namespaces TEXT NOT NULL,
+    expiry INTEGER NOT NULL,
+    acknowledged INTEGER AS kotlin.Boolean NOT NULL DEFAULT 0,
+    settle_request_id INTEGER
+);
+
+selectAllWcSessions:
+SELECT * FROM wc_sessions;
+
+selectWcSessionByTopic:
+SELECT * FROM wc_sessions WHERE topic = ?;
+
+upsertWcSession:
+INSERT OR REPLACE INTO wc_sessions(topic, pairing_topic, proposer_public_key, proposer_metadata, responder_public_key, responder_metadata, namespaces, expiry, acknowledged, settle_request_id)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+
+deleteWcSessionByTopic:
+DELETE FROM wc_sessions WHERE topic = ?;
+
+deleteAllWcSessions:
+DELETE FROM wc_sessions;

@@ -28,6 +28,7 @@ import com.ultrabytecoder.coinsafebox.domain.usecase.GetWalletsUseCase
 import com.ultrabytecoder.coinsafebox.domain.usecase.GetMnemonicUseCase
 import com.ultrabytecoder.coinsafebox.domain.usecase.DeleteWalletUseCase
 import com.ultrabytecoder.coinsafebox.domain.usecase.RenameWalletUseCase
+import com.ultrabytecoder.coinsafebox.domain.usecase.ReconcileAddressesUseCase
 import com.ultrabytecoder.coinsafebox.domain.usecase.SendUseCase
 import com.ultrabytecoder.coinsafebox.domain.usecase.RemoveMasterKeyUseCase
 import com.ultrabytecoder.coinsafebox.domain.usecase.GetSecurityMethodUseCase
@@ -39,6 +40,18 @@ import com.ultrabytecoder.coinsafebox.domain.usecase.SyncUseCase
 import com.ultrabytecoder.coinsafebox.domain.usecase.VerifyPinUseCase
 import com.ultrabytecoder.coinsafebox.security.KeyManager
 import com.ultrabytecoder.coinsafebox.security.SessionManager
+import com.ultrabytecoder.coinsafebox.data.walletconnect.SqlWcSessionRepository
+import com.ultrabytecoder.coinsafebox.data.walletconnect.WcController
+import com.ultrabytecoder.coinsafebox.data.walletconnect.WcCrypto
+import com.ultrabytecoder.coinsafebox.data.walletconnect.WcEthSigner
+import com.ultrabytecoder.coinsafebox.data.walletconnect.WcMetadata
+import com.ultrabytecoder.coinsafebox.data.walletconnect.WcPendingRequestHolder
+import com.ultrabytecoder.coinsafebox.data.walletconnect.WcProposalHolder
+import com.ultrabytecoder.coinsafebox.data.walletconnect.WcRelayClient
+import com.ultrabytecoder.coinsafebox.data.walletconnect.WcRequestHandler
+import com.ultrabytecoder.coinsafebox.data.walletconnect.WcSessionManager
+import com.ultrabytecoder.coinsafebox.data.walletconnect.WcSessionRepository
+import com.ultrabytecoder.coinsafebox.data.walletconnect.WcSessionRequestHandler
 import com.ultrabytecoder.coinsafebox.ui.viewmodel.CreateWalletFlowDraft
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -70,7 +83,7 @@ fun appModule(networkConfig: NetworkConfig) = module {
     factory { CreateWalletUseCase(get()) }
     factory { GetMnemonicUseCase(get()) }
     factory { GetAccountsUseCase(get()) }
-    factory { CreateAccountUseCase(get(), get(), get()) }
+    factory { CreateAccountUseCase(get(), get(), get(), get(), get()) }
     factory { AddTokenUseCase(get()) }
     factory { CreateTokenUseCase(get(), get(), get()) }
     factory { EstimateFeeUseCase(get(), get(), get(), get(), get(), get()) }
@@ -79,7 +92,8 @@ fun appModule(networkConfig: NetworkConfig) = module {
     factory { GetWalletsUseCase(get()) }
     factory { DeleteWalletUseCase(get(), get(), get(), get()) }
     factory { RenameWalletUseCase(get()) }
-    factory { RemoveMasterKeyUseCase(get(), get(), get(), get(), get(), get()) }
+    factory { RemoveMasterKeyUseCase(get(), get(), get()) }
+    factory { ReconcileAddressesUseCase(get(), get(), get(), get(), get(), get()) }
     single { SyncManager() }
     factory { SyncUseCase(get(), get(), get(), get(), get(), get(), get()) }
     factory { SyncAccountUseCase(get(), get(), get(), get(), get(), get(), get()) }
@@ -93,4 +107,30 @@ fun appModule(networkConfig: NetworkConfig) = module {
     factory { ChangePinUseCase(get()) }
 
     single<FiatQuoteProvider> { RemoteFiatQuoteProvider(get()) }
+
+    // WalletConnect v2: relay crypto/transport + session manager. The relay is only
+    // connected after DB unlock (see WcController.start in the unlock flow) and
+    // dropped on session lock (see the lock handler in App.kt).
+    single { WcCrypto(get<SettingsStorage>()) }
+    single { WcRelayClient(get(), get<NetworkConfig>().wcProjectId) }
+    single<WcSessionRepository> { SqlWcSessionRepository(get()) }
+    single { WcPendingRequestHolder() }
+    single { WcEthSigner(get<NetworkConfig>()) }
+    single<WcSessionRequestHandler> { WcRequestHandler(get(), get<NetworkConfig>()) }
+    single {
+        WcSessionManager(
+            crypto = get(),
+            relay = get(),
+            walletMetadata = WcMetadata(
+                name = "CoinSafeBox",
+                description = "Self-custody multi-chain wallet",
+                url = "https://coinsafebox.duckdns.org"
+            ),
+            supportedChainIds = listOf(get<NetworkConfig>().ethChainId),
+            requestHandler = get(),
+            sessionRepository = get()
+        )
+    }
+    single { WcProposalHolder() }
+    single { WcController(get(), get(), get(), get(), get()) }
 }

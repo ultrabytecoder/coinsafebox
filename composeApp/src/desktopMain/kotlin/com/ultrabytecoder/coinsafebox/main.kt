@@ -21,10 +21,11 @@ fun main() = application {
         else -> !DesktopBuildConfig.IS_TESTNET
     }
     val etherscanKey = System.getProperty("coinsafebox.etherscan.key", DesktopBuildConfig.ETHERSCAN_API_KEY)
+    val wcProjectId = System.getProperty("coinsafebox.wc.project.id", DesktopBuildConfig.WC_PROJECT_ID)
     val networkConfig = if (useMainnet) {
-        NetworkConfig.mainnet(etherscanApiKey = etherscanKey)
+        NetworkConfig.mainnet(etherscanApiKey = etherscanKey, wcProjectId = wcProjectId)
     } else {
-        NetworkConfig.testnet(etherscanApiKey = etherscanKey)
+        NetworkConfig.testnet(etherscanApiKey = etherscanKey, wcProjectId = wcProjectId)
     }
 
     startKoin {
