@@ -339,7 +339,8 @@ fun App() {
                 val checkPinStatus: CheckPinStatusUseCase = koinInject()
                 val getSecurityMethod: GetSecurityMethodUseCase = koinInject()
                 val settingsStorage: com.ultrabytecoder.coinsafebox.data.SettingsStorage = koinInject()
-                val viewModel = rememberDisposableViewModel { EnterPinViewModel(verifyPin, getWallets, syncUseCase, checkPinStatus, getSecurityMethod, settingsStorage, wcController) }
+                val reconcileAddresses: com.ultrabytecoder.coinsafebox.domain.usecase.ReconcileAddressesUseCase = koinInject()
+                val viewModel = rememberDisposableViewModel { EnterPinViewModel(verifyPin, getWallets, syncUseCase, checkPinStatus, getSecurityMethod, settingsStorage, wcController, reconcileAddresses) }
                 PinScreenEnter(navController, viewModel)
             }
             composable<Screen.Settings> {

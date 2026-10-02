@@ -12,6 +12,7 @@ import com.ultrabytecoder.coinsafebox.domain.repository.VerifyResult
 import com.ultrabytecoder.coinsafebox.domain.usecase.CheckPinStatusUseCase
 import com.ultrabytecoder.coinsafebox.domain.usecase.GetSecurityMethodUseCase
 import com.ultrabytecoder.coinsafebox.domain.usecase.GetWalletsUseCase
+import com.ultrabytecoder.coinsafebox.domain.usecase.ReconcileAddressesUseCase
 import com.ultrabytecoder.coinsafebox.domain.usecase.SyncUseCase
 import com.ultrabytecoder.coinsafebox.domain.usecase.VerifyPinUseCase
 import com.ultrabytecoder.coinsafebox.providers.SyncMode
@@ -49,7 +50,8 @@ class EnterPinViewModel(
     checkPinStatus: CheckPinStatusUseCase,
     getSecurityMethod: GetSecurityMethodUseCase,
     settingsStorage: SettingsStorage,
-    private val wcController: WcController
+    private val wcController: WcController,
+    private val reconcileAddresses: ReconcileAddressesUseCase
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(
@@ -135,11 +137,20 @@ class EnterPinViewModel(
 
     /** Routes to the main screen, or to wallet creation when no wallet exists yet. */
     private suspend fun navigateAfterUnlock() {
-        // Reconnect the WalletConnect relay (dropped on lock) on its own
-        // app-lifetime scope so it survives this screen being disposed.
-        wcController.start()
         val walletId = getWalletsUseCase().first().firstOrNull()?.id
         if (walletId != null) {
+            // Backfill any addresses missing from pre-persist-at-creation accounts.
+            // No-op when all addresses are already present.
+            try {
+                reconcileAddresses(walletId)
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                println("ReconcileAddresses failed for wallet $walletId: ${e.message}")
+            }
+            // Reconnect the WalletConnect relay (dropped on lock) on its own
+            // app-lifetime scope so it survives this screen being disposed.
+            wcController.start()
             syncUseCase(viewModelScope, walletId, SyncMode.FULL)
             _events.emit(EnterPinEvent.NavigateToAccountsList(walletId))
         } else {
