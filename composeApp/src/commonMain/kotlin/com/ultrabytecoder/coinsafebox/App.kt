@@ -39,6 +39,7 @@ import com.ultrabytecoder.coinsafebox.ui.screens.TransactionSentScreen
 import com.ultrabytecoder.coinsafebox.ui.screens.TransactionDetailsScreen
 import com.ultrabytecoder.coinsafebox.ui.screens.WelcomeScreen
 import com.ultrabytecoder.coinsafebox.ui.screens.wc.WcPairScreen
+import com.ultrabytecoder.coinsafebox.ui.screens.wc.WcRequestScreen
 import com.ultrabytecoder.coinsafebox.ui.screens.wc.WcSessionProposalScreen
 import com.ultrabytecoder.coinsafebox.ui.screens.wc.WcSessionsScreen
 import com.ultrabytecoder.coinsafebox.data.walletconnect.WcController
@@ -63,6 +64,7 @@ import com.ultrabytecoder.coinsafebox.ui.viewmodel.SetPasswordViewModel
 import com.ultrabytecoder.coinsafebox.ui.viewmodel.StartupViewModel
 import com.ultrabytecoder.coinsafebox.ui.viewmodel.StartupState
 import com.ultrabytecoder.coinsafebox.ui.viewmodel.WcPairViewModel
+import com.ultrabytecoder.coinsafebox.ui.viewmodel.WcRequestViewModel
 import com.ultrabytecoder.coinsafebox.ui.viewmodel.WcSessionProposalViewModel
 import com.ultrabytecoder.coinsafebox.ui.viewmodel.WcSessionsViewModel
 import com.ultrabytecoder.coinsafebox.domain.repository.PinState
@@ -381,6 +383,16 @@ fun App() {
             composable<Screen.WcSessions> {
                 val viewModel = rememberDisposableViewModel { WcSessionsViewModel(wcController) }
                 WcSessionsScreen(navController, viewModel)
+            }
+            composable<Screen.WcRequest> { backStackEntry ->
+                val route = backStackEntry.toRoute<Screen.WcRequest>()
+                val accountRepository: com.ultrabytecoder.coinsafebox.domain.repository.AccountRepository = koinInject()
+                val keyProvider: com.ultrabytecoder.coinsafebox.domain.service.KeyProvider = koinInject()
+                val wcEthSigner: com.ultrabytecoder.coinsafebox.data.walletconnect.WcEthSigner = koinInject()
+                val viewModel = rememberDisposableViewModel(route.walletId) {
+                    WcRequestViewModel(wcController, accountRepository, keyProvider, wcEthSigner, route.walletId)
+                }
+                WcRequestScreen(navController, viewModel)
             }
         }
     }

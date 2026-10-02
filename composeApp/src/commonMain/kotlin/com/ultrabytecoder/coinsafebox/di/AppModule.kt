@@ -43,9 +43,12 @@ import com.ultrabytecoder.coinsafebox.security.SessionManager
 import com.ultrabytecoder.coinsafebox.data.walletconnect.SqlWcSessionRepository
 import com.ultrabytecoder.coinsafebox.data.walletconnect.WcController
 import com.ultrabytecoder.coinsafebox.data.walletconnect.WcCrypto
+import com.ultrabytecoder.coinsafebox.data.walletconnect.WcEthSigner
 import com.ultrabytecoder.coinsafebox.data.walletconnect.WcMetadata
+import com.ultrabytecoder.coinsafebox.data.walletconnect.WcPendingRequestHolder
 import com.ultrabytecoder.coinsafebox.data.walletconnect.WcProposalHolder
 import com.ultrabytecoder.coinsafebox.data.walletconnect.WcRelayClient
+import com.ultrabytecoder.coinsafebox.data.walletconnect.WcRequestHandler
 import com.ultrabytecoder.coinsafebox.data.walletconnect.WcSessionManager
 import com.ultrabytecoder.coinsafebox.data.walletconnect.WcSessionRepository
 import com.ultrabytecoder.coinsafebox.ui.viewmodel.CreateWalletFlowDraft
@@ -110,6 +113,9 @@ fun appModule(networkConfig: NetworkConfig) = module {
     single { WcCrypto(get<SettingsStorage>()) }
     single { WcRelayClient(get(), get<NetworkConfig>().wcProjectId) }
     single<WcSessionRepository> { SqlWcSessionRepository(get()) }
+    single { WcPendingRequestHolder() }
+    single { WcEthSigner(get<NetworkConfig>()) }
+    single { WcRequestHandler(get()) }
     single {
         WcSessionManager(
             crypto = get(),
@@ -120,10 +126,10 @@ fun appModule(networkConfig: NetworkConfig) = module {
                 url = "https://coinsafebox.duckdns.org"
             ),
             supportedChainIds = listOf(get<NetworkConfig>().ethChainId),
-            requestHandler = null, // EVM request fulfilment is a follow-up pass
+            requestHandler = get(),
             sessionRepository = get()
         )
     }
     single { WcProposalHolder() }
-    single { WcController(get(), get(), get(), get()) }
+    single { WcController(get(), get(), get(), get(), get()) }
 }

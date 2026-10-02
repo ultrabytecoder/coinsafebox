@@ -21,6 +21,7 @@ class WcController internal constructor(
     internal val sessionManager: WcSessionManager,
     private val networkConfig: NetworkConfig,
     val proposalHolder: WcProposalHolder,
+    val pendingRequestHolder: WcPendingRequestHolder,
 ) {
     private val _sessions = MutableStateFlow<List<WcSession>>(emptyList())
     val sessions: StateFlow<List<WcSession>> = _sessions
@@ -83,6 +84,10 @@ class WcController internal constructor(
         // A pending proposal almost certainly expires (5-minute TTL) while the
         // app is locked; don't resurface a stale banner after unlock.
         proposalHolder.clear()
+        // A pending request's deferred will never be completed while locked;
+        // cancel it so the handler coroutine doesn't leak.
+        pendingRequestHolder.pendingRequest.value?.deferred?.cancel()
+        pendingRequestHolder.clear()
         sessionManager.stop()
         _sessions.value = emptyList()
     }

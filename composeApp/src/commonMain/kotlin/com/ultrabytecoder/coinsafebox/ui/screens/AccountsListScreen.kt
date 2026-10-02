@@ -72,6 +72,7 @@ fun AccountsListScreen(
     val accountGroups by viewModel.accountGroups.collectAsStateWithLifecycle(initialValue = null)
     val syncingAccounts by viewModel.syncingAccounts.collectAsStateWithLifecycle(initialValue = emptySet())
     val pendingWcProposal by wcController.proposalHolder.pendingProposal.collectAsStateWithLifecycle()
+    val pendingWcRequest by wcController.pendingRequestHolder.pendingRequest.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
     val expandedAccountIds by viewModel.expandedAccountIds.collectAsStateWithLifecycle(initialValue = emptySet())
     val fiatBalances by viewModel.fiatBalances.collectAsStateWithLifecycle(initialValue = emptyMap())
@@ -221,6 +222,13 @@ fun AccountsListScreen(
                     }
                 }
             )
+        }
+        // Auto-navigate to the request confirmation screen when a dApp
+        // sends a transaction request.
+        LaunchedEffect(pendingWcRequest) {
+            pendingWcRequest?.let {
+                navController.navigate(Screen.WcRequest(selectedWalletId))
+            }
         }
             if (accountGroups == null) {
                 Box(

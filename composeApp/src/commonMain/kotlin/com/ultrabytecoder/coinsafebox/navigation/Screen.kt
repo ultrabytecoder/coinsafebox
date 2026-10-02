@@ -73,4 +73,7 @@ sealed interface Screen {
 
     @Serializable
     data object WcSessions : Screen
+
+    @Serializable
+    data class WcRequest(val walletId: Long) : Screen
 }
