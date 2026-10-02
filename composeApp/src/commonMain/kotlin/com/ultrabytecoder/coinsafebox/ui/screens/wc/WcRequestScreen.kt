@@ -53,7 +53,9 @@ fun WcRequestScreen(
     }
 
     LaunchedEffect(state.error) {
-        if (state.error != null && !state.isLoading) {
+        if (state.error != null && !state.isLoading && !state.busy) {
+            // Small delay so the user can see the error before dismissing.
+            kotlinx.coroutines.delay(3000)
             navController.popBackStack()
         }
     }
@@ -104,11 +106,17 @@ fun WcRequestScreen(
                     )
                 ) {
                     Column(modifier = Modifier.padding(16.dp)) {
+                        if (state.fromAddress.isNotBlank()) {
+                            DetailRow("From", shortAddress(state.fromAddress))
+                        }
                         DetailRow("To", shortAddress(state.toAddress))
                         DetailRow("Value", "${state.valueEth} ETH")
                         DetailRow("Gas Limit", state.gasLimit)
                         if (state.gasPrice.isNotBlank()) {
                             DetailRow("Max Fee", state.gasPrice)
+                        }
+                        if (state.nonce.isNotBlank()) {
+                            DetailRow("Nonce", state.nonce)
                         }
                         if (state.hasData) {
                             DetailRow("Data", state.dataPreview)
@@ -144,6 +152,18 @@ fun WcRequestScreen(
 
                 Spacer(modifier = Modifier.weight(1f))
 
+                // Disable reason
+                state.approveDisabledReason?.let { reason ->
+                    Text(
+                        text = reason,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                }
+
                 // Action buttons
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -163,7 +183,7 @@ fun WcRequestScreen(
                         modifier = Modifier
                             .weight(1f)
                             .height(50.dp),
-                        enabled = !state.busy
+                        enabled = !state.busy && state.canApprove
                     ) {
                         if (state.busy) {
                             CircularProgressIndicator(

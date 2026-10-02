@@ -115,7 +115,7 @@ fun appModule(networkConfig: NetworkConfig) = module {
     single<WcSessionRepository> { SqlWcSessionRepository(get()) }
     single { WcPendingRequestHolder() }
     single { WcEthSigner(get<NetworkConfig>()) }
-    single { WcRequestHandler(get()) }
+    single { WcRequestHandler(get(), get<NetworkConfig>()) }
     single {
         WcSessionManager(
             crypto = get(),
