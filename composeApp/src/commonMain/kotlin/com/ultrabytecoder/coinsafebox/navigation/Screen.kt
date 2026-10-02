@@ -64,4 +64,13 @@ sealed interface Screen {
 
     @Serializable
     data object CustomNodes : Screen
+
+    @Serializable
+    data class WcPair(val walletId: Long) : Screen
+
+    @Serializable
+    data class WcSessionProposal(val proposalId: Long, val walletId: Long) : Screen
+
+    @Serializable
+    data object WcSessions : Screen
 }

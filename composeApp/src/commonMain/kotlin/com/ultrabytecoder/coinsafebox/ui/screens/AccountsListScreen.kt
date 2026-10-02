@@ -32,6 +32,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavController
+import kotlinx.coroutines.launch
 import com.ultrabytecoder.coinsafebox.domain.model.AccountGroup
 import com.ultrabytecoder.coinsafebox.domain.model.AccountInfo
 import com.ultrabytecoder.coinsafebox.domain.model.AccountType
@@ -40,6 +41,8 @@ import com.ultrabytecoder.coinsafebox.ui.theme.AuroraPrimary
 import compose.icons.FeatherIcons
 import compose.icons.feathericons.*
 import com.ultrabytecoder.coinsafebox.navigation.Screen
+import com.ultrabytecoder.coinsafebox.data.walletconnect.WcController
+import com.ultrabytecoder.coinsafebox.data.walletconnect.WcProposal
 import com.ultrabytecoder.coinsafebox.ui.viewmodel.AccountsListViewModel
 import org.jetbrains.compose.resources.DrawableResource
 import org.jetbrains.compose.resources.painterResource
@@ -61,12 +64,15 @@ import coinsafebox.composeapp.generated.resources.ic_token_trc20
 @Composable
 fun AccountsListScreen(
     navController: NavController,
-    viewModel: AccountsListViewModel
+    viewModel: AccountsListViewModel,
+    wcController: WcController
 ) {
     val wallets by viewModel.wallets.collectAsStateWithLifecycle(initialValue = emptyList())
     val selectedWalletId by viewModel.selectedWalletId.collectAsStateWithLifecycle()
     val accountGroups by viewModel.accountGroups.collectAsStateWithLifecycle(initialValue = null)
     val syncingAccounts by viewModel.syncingAccounts.collectAsStateWithLifecycle(initialValue = emptySet())
+    val pendingWcProposal by wcController.proposalHolder.pendingProposal.collectAsStateWithLifecycle()
+    val scope = rememberCoroutineScope()
     val expandedAccountIds by viewModel.expandedAccountIds.collectAsStateWithLifecycle(initialValue = emptySet())
     val fiatBalances by viewModel.fiatBalances.collectAsStateWithLifecycle(initialValue = emptyMap())
     val selectedWallet = wallets.find { it.id == selectedWalletId }
@@ -156,6 +162,26 @@ fun AccountsListScreen(
                                 },
                                 leadingIcon = { Icon(FeatherIcons.Briefcase, contentDescription = null, modifier = Modifier.size(18.dp)) }
                             )
+                            if (wcController.isAvailable()) {
+                                if (selectedWallet?.isReadOnly != true) {
+                                    DropdownMenuItem(
+                                        text = { Text("Connect to dApp") },
+                                        onClick = {
+                                            moreMenuExpanded = false
+                                            navController.navigate(Screen.WcPair(selectedWalletId))
+                                        },
+                                        leadingIcon = { Icon(FeatherIcons.Link, contentDescription = null, modifier = Modifier.size(18.dp)) }
+                                    )
+                                }
+                                DropdownMenuItem(
+                                    text = { Text("WalletConnect Sessions") },
+                                    onClick = {
+                                        moreMenuExpanded = false
+                                        navController.navigate(Screen.WcSessions)
+                                    },
+                                    leadingIcon = { Icon(FeatherIcons.Globe, contentDescription = null, modifier = Modifier.size(18.dp)) }
+                                )
+                            }
                             DropdownMenuItem(
                                 text = { Text("Settings") },
                                 onClick = {
@@ -173,72 +199,135 @@ fun AccountsListScreen(
             )
         }
     ) { paddingValues ->
-        if (accountGroups == null) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(paddingValues),
-                contentAlignment = Alignment.Center
-            ) {
-                CircularProgressIndicator()
-            }
-        } else {
-            val loadedGroups = accountGroups!!
-            if (loadedGroups.isEmpty()) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(paddingValues)
+        ) {
+        pendingWcProposal?.let { proposal ->
+            WcPendingProposalBanner(
+                proposal = proposal,
+                onReview = {
+                    navController.navigate(
+                        Screen.WcSessionProposal(proposal.id, selectedWalletId)
+                    )
+                },
+                onDismiss = {
+                    scope.launch {
+                        // Tell the dApp the user declined; best-effort — the
+                        // proposal may have expired or been consumed already.
+                        try { wcController.sessionManager.reject(proposal.id) } catch (_: Exception) {}
+                        wcController.proposalHolder.clear()
+                    }
+                }
+            )
+        }
+            if (accountGroups == null) {
                 Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(paddingValues),
+                    modifier = Modifier.fillMaxSize(),
                     contentAlignment = Alignment.Center
                 ) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Icon(
-                            FeatherIcons.Briefcase,
-                            contentDescription = null,
-                            modifier = Modifier.size(64.dp),
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
-                        )
-                        Spacer(modifier = Modifier.height(16.dp))
-                        Text(
-                            "No accounts yet",
-                            style = MaterialTheme.typography.titleMedium,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Text(
-                            "Add your first account to get started",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
+                    CircularProgressIndicator()
                 }
             } else {
-                LazyColumn(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(paddingValues),
-                    contentPadding = PaddingValues(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    items(
-                        items = loadedGroups,
-                        key = { it.parent.id }
-                    ) { group ->
-                        AccountGroupItem(
-                            group = group,
-                            isExpanded = group.parent.id in expandedAccountIds,
-                            isSyncing = group.parent.id in syncingAccounts,
-                            fiatBalances = fiatBalances,
-                            onToggleExpand = { viewModel.toggleExpanded(group.parent.id) },
-                            onParentClick = {
-                                navController.navigate(Screen.AccountDetails(group.parent.id))
-                            },
-                            onTokenClick = { token ->
-                                navController.navigate(Screen.AccountDetails(group.parent.id, token.id))
-                            }
-                        )
+                val loadedGroups = accountGroups!!
+                if (loadedGroups.isEmpty()) {
+                    Box(
+                        modifier = Modifier.fillMaxSize(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Icon(
+                                FeatherIcons.Briefcase,
+                                contentDescription = null,
+                                modifier = Modifier.size(64.dp),
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                            )
+                            Spacer(modifier = Modifier.height(16.dp))
+                            Text(
+                                "No accounts yet",
+                                style = MaterialTheme.typography.titleMedium,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                "Add your first account to get started",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                } else {
+                    LazyColumn(
+                        modifier = Modifier.fillMaxSize(),
+                        contentPadding = PaddingValues(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        items(
+                            items = loadedGroups,
+                            key = { it.parent.id }
+                        ) { group ->
+                            AccountGroupItem(
+                                group = group,
+                                isExpanded = group.parent.id in expandedAccountIds,
+                                isSyncing = group.parent.id in syncingAccounts,
+                                fiatBalances = fiatBalances,
+                                onToggleExpand = { viewModel.toggleExpanded(group.parent.id) },
+                                onParentClick = {
+                                    navController.navigate(Screen.AccountDetails(group.parent.id))
+                                },
+                                onTokenClick = { token ->
+                                    navController.navigate(Screen.AccountDetails(group.parent.id, token.id))
+                                }
+                            )
+                        }
                     }
                 }
+            }
+        }
+    }
+}
+
+/** Banner shown when a dApp's session proposal is waiting for the user's decision. */
+@Composable
+private fun WcPendingProposalBanner(
+    proposal: WcProposal,
+    onReview: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.primaryContainer
+        ),
+        shape = RoundedCornerShape(12.dp)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(start = 16.dp, top = 4.dp, bottom = 4.dp, end = 4.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                FeatherIcons.Link,
+                contentDescription = null,
+                modifier = Modifier.size(18.dp),
+                tint = MaterialTheme.colorScheme.onPrimaryContainer
+            )
+            Spacer(modifier = Modifier.width(12.dp))
+            Text(
+                "Connection request from ${proposal.proposerMetadata.name.ifBlank { "a dApp" }}",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onPrimaryContainer,
+                modifier = Modifier.weight(1f)
+            )
+            TextButton(onClick = onDismiss) {
+                Text("Dismiss", color = MaterialTheme.colorScheme.onPrimaryContainer)
+            }
+            TextButton(onClick = onReview) {
+                Text("Review", color = MaterialTheme.colorScheme.onPrimaryContainer)
             }
         }
     }

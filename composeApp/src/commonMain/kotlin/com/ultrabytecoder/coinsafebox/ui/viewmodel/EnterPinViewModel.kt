@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.ultrabytecoder.coinsafebox.data.SettingsKeys
 import com.ultrabytecoder.coinsafebox.data.SettingsStorage
+import com.ultrabytecoder.coinsafebox.data.walletconnect.WcController
 import com.ultrabytecoder.coinsafebox.domain.repository.PinConfig
 import com.ultrabytecoder.coinsafebox.domain.repository.PinState
 import com.ultrabytecoder.coinsafebox.domain.repository.SecurityMethod
@@ -47,7 +48,8 @@ class EnterPinViewModel(
     private val syncUseCase: SyncUseCase,
     checkPinStatus: CheckPinStatusUseCase,
     getSecurityMethod: GetSecurityMethodUseCase,
-    settingsStorage: SettingsStorage
+    settingsStorage: SettingsStorage,
+    private val wcController: WcController
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(
@@ -133,6 +135,9 @@ class EnterPinViewModel(
 
     /** Routes to the main screen, or to wallet creation when no wallet exists yet. */
     private suspend fun navigateAfterUnlock() {
+        // Reconnect the WalletConnect relay (dropped on lock) on its own
+        // app-lifetime scope so it survives this screen being disposed.
+        wcController.start()
         val walletId = getWalletsUseCase().first().firstOrNull()?.id
         if (walletId != null) {
             syncUseCase(viewModelScope, walletId, SyncMode.FULL)

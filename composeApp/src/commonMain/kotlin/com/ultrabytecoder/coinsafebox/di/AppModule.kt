@@ -39,6 +39,14 @@ import com.ultrabytecoder.coinsafebox.domain.usecase.SyncUseCase
 import com.ultrabytecoder.coinsafebox.domain.usecase.VerifyPinUseCase
 import com.ultrabytecoder.coinsafebox.security.KeyManager
 import com.ultrabytecoder.coinsafebox.security.SessionManager
+import com.ultrabytecoder.coinsafebox.data.walletconnect.SqlWcSessionRepository
+import com.ultrabytecoder.coinsafebox.data.walletconnect.WcController
+import com.ultrabytecoder.coinsafebox.data.walletconnect.WcCrypto
+import com.ultrabytecoder.coinsafebox.data.walletconnect.WcMetadata
+import com.ultrabytecoder.coinsafebox.data.walletconnect.WcProposalHolder
+import com.ultrabytecoder.coinsafebox.data.walletconnect.WcRelayClient
+import com.ultrabytecoder.coinsafebox.data.walletconnect.WcSessionManager
+import com.ultrabytecoder.coinsafebox.data.walletconnect.WcSessionRepository
 import com.ultrabytecoder.coinsafebox.ui.viewmodel.CreateWalletFlowDraft
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -93,4 +101,27 @@ fun appModule(networkConfig: NetworkConfig) = module {
     factory { ChangePinUseCase(get()) }
 
     single<FiatQuoteProvider> { RemoteFiatQuoteProvider(get()) }
+
+    // WalletConnect v2: relay crypto/transport + session manager. The relay is only
+    // connected after DB unlock (see WcController.start in the unlock flow) and
+    // dropped on session lock (see the lock handler in App.kt).
+    single { WcCrypto(get<SettingsStorage>()) }
+    single { WcRelayClient(get(), get<NetworkConfig>().wcProjectId) }
+    single<WcSessionRepository> { SqlWcSessionRepository(get()) }
+    single {
+        WcSessionManager(
+            crypto = get(),
+            relay = get(),
+            walletMetadata = WcMetadata(
+                name = "CoinSafeBox",
+                description = "Self-custody multi-chain wallet",
+                url = "https://coinsafebox.duckdns.org"
+            ),
+            supportedChainIds = listOf(get<NetworkConfig>().ethChainId),
+            requestHandler = null, // EVM request fulfilment is a follow-up pass
+            sessionRepository = get()
+        )
+    }
+    single { WcProposalHolder() }
+    single { WcController(get(), get(), get(), get()) }
 }

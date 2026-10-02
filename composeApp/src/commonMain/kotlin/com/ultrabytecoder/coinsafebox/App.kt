@@ -38,6 +38,10 @@ import com.ultrabytecoder.coinsafebox.ui.screens.SetPasswordScreen
 import com.ultrabytecoder.coinsafebox.ui.screens.TransactionSentScreen
 import com.ultrabytecoder.coinsafebox.ui.screens.TransactionDetailsScreen
 import com.ultrabytecoder.coinsafebox.ui.screens.WelcomeScreen
+import com.ultrabytecoder.coinsafebox.ui.screens.wc.WcPairScreen
+import com.ultrabytecoder.coinsafebox.ui.screens.wc.WcSessionProposalScreen
+import com.ultrabytecoder.coinsafebox.ui.screens.wc.WcSessionsScreen
+import com.ultrabytecoder.coinsafebox.data.walletconnect.WcController
 import com.ultrabytecoder.coinsafebox.ui.theme.CoinSafeBoxTheme
 import com.ultrabytecoder.coinsafebox.ui.viewmodel.AccountDetailsViewModel
 import com.ultrabytecoder.coinsafebox.domain.usecase.SyncManager
@@ -58,6 +62,9 @@ import com.ultrabytecoder.coinsafebox.ui.viewmodel.ChangePinViewModel
 import com.ultrabytecoder.coinsafebox.ui.viewmodel.SetPasswordViewModel
 import com.ultrabytecoder.coinsafebox.ui.viewmodel.StartupViewModel
 import com.ultrabytecoder.coinsafebox.ui.viewmodel.StartupState
+import com.ultrabytecoder.coinsafebox.ui.viewmodel.WcPairViewModel
+import com.ultrabytecoder.coinsafebox.ui.viewmodel.WcSessionProposalViewModel
+import com.ultrabytecoder.coinsafebox.ui.viewmodel.WcSessionsViewModel
 import com.ultrabytecoder.coinsafebox.domain.repository.PinState
 import com.ultrabytecoder.coinsafebox.domain.provider.FiatQuoteProvider
 import org.koin.compose.koinInject
@@ -106,11 +113,15 @@ private fun <T : ViewModel> rememberDisposableViewModel(vararg keys: Any?, creat
 fun App() {
     CoinSafeBoxTheme {
         val navController = rememberNavController()
+        val wcController: WcController = koinInject()
 
         // Session locked (app backgrounded, see SessionLockNotifier): return to the
         // startup wizard, which routes to the PIN unlock (or recovery) screen.
         LaunchedEffect(Unit) {
             SessionLockNotifier.locked.collect {
+                // Drop the WalletConnect relay too: in-memory session keys are only
+                // valid for the duration of an unlocked session.
+                wcController.stop()
                 // Guard against redundant navigations when the lock fires repeatedly
                 // (e.g. rapid background/foreground): if we are already on the startup
                 // screen, there is nothing to do (NEW-9).
@@ -207,7 +218,7 @@ fun App() {
                         settingsStorage, quoteProvider
                     )
                 }
-                AccountsListScreen(navController, viewModel)
+                AccountsListScreen(navController, viewModel, wcController)
             }
             composable<Screen.AccountDetails> { backStackEntry ->
                 val route = backStackEntry.toRoute<Screen.AccountDetails>()
@@ -328,7 +339,7 @@ fun App() {
                 val checkPinStatus: CheckPinStatusUseCase = koinInject()
                 val getSecurityMethod: GetSecurityMethodUseCase = koinInject()
                 val settingsStorage: com.ultrabytecoder.coinsafebox.data.SettingsStorage = koinInject()
-                val viewModel = rememberDisposableViewModel { EnterPinViewModel(verifyPin, getWallets, syncUseCase, checkPinStatus, getSecurityMethod, settingsStorage) }
+                val viewModel = rememberDisposableViewModel { EnterPinViewModel(verifyPin, getWallets, syncUseCase, checkPinStatus, getSecurityMethod, settingsStorage, wcController) }
                 PinScreenEnter(navController, viewModel)
             }
             composable<Screen.Settings> {
@@ -350,6 +361,24 @@ fun App() {
                 val networkConfig: com.ultrabytecoder.coinsafebox.data.NetworkConfig = koinInject(named("raw"))
                 val viewModel = rememberDisposableViewModel { CustomNodesViewModel(settingsStorage, networkConfig) }
                 CustomNodesScreen(navController, viewModel)
+            }
+            composable<Screen.WcPair> { backStackEntry ->
+                val route = backStackEntry.toRoute<Screen.WcPair>()
+                val viewModel = rememberDisposableViewModel(route.walletId) { WcPairViewModel(wcController) }
+                WcPairScreen(navController, route.walletId, viewModel)
+            }
+            composable<Screen.WcSessionProposal> { backStackEntry ->
+                val route = backStackEntry.toRoute<Screen.WcSessionProposal>()
+                val getAccounts: GetAccountsUseCase = koinInject()
+                val networkConfig: com.ultrabytecoder.coinsafebox.data.NetworkConfig = koinInject()
+                val viewModel = rememberDisposableViewModel(route.proposalId, route.walletId) {
+                    WcSessionProposalViewModel(route.proposalId, route.walletId, wcController, getAccounts, networkConfig)
+                }
+                WcSessionProposalScreen(navController, viewModel)
+            }
+            composable<Screen.WcSessions> {
+                val viewModel = rememberDisposableViewModel { WcSessionsViewModel(wcController) }
+                WcSessionsScreen(navController, viewModel)
             }
         }
     }
