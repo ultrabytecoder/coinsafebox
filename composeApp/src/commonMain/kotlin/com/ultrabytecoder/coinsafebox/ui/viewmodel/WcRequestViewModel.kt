@@ -70,10 +70,9 @@ class WcRequestViewModel(
         val valueHex = params["value"]?.jsonPrimitive?.content ?: "0x0"
         val valueEth = try {
             val valueWei = java.math.BigInteger(valueHex.removePrefix("0x"), 16)
-            val eth = valueWei.divideAndRemainder(java.math.BigInteger.TEN.pow(18))
-            if (eth[0] == java.math.BigInteger.ZERO && eth[1] == java.math.BigInteger.ZERO) "0"
-            else if (eth[0] == java.math.BigInteger.ZERO) "${eth[1].shiftRight(12)} (tiny)"
-            else eth[0].toString()
+            java.math.BigDecimal(valueWei)
+                .divide(java.math.BigDecimal.TEN.pow(18), 6, java.math.RoundingMode.HALF_UP)
+                .stripTrailingZeros().toPlainString()
         } catch (_: Exception) { "0" }
 
         val gas = (params["gas"] ?: params["gasLimit"])?.jsonPrimitive?.content
@@ -106,7 +105,7 @@ class WcRequestViewModel(
                     canApprove = false
                     approveDisabledReason = "No ETH account available to sign."
                 } else {
-                    val from = params["from"]?.jsonPrimitive?.content
+                    val from = params["from"]?.jsonPrimitive?.content?.takeIf { it.isNotBlank() }
                     if (from != null && from.isNotBlank()) {
                         val matches = ethAccounts.any { it.address?.equals(from, ignoreCase = true) == true }
                         if (!matches) {
@@ -152,7 +151,7 @@ class WcRequestViewModel(
                     .first { it.type is AccountType.Eth && !it.address.isNullOrBlank() }
 
                 // If 'from' was specified, use the matching account.
-                val from = (request.requestParams as? JsonObject)?.get("from")?.jsonPrimitive?.content
+                val from = (request.requestParams as? JsonObject)?.get("from")?.jsonPrimitive?.content?.takeIf { it.isNotBlank() }
                 val signingAccount = if (from != null) {
                     accountRepository.getAccountsByWalletFlow(walletId).first()
                         .firstOrNull { it.type is AccountType.Eth && it.address?.equals(from, ignoreCase = true) == true }
