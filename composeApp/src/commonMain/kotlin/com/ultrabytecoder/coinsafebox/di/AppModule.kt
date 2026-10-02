@@ -51,6 +51,7 @@ import com.ultrabytecoder.coinsafebox.data.walletconnect.WcRelayClient
 import com.ultrabytecoder.coinsafebox.data.walletconnect.WcRequestHandler
 import com.ultrabytecoder.coinsafebox.data.walletconnect.WcSessionManager
 import com.ultrabytecoder.coinsafebox.data.walletconnect.WcSessionRepository
+import com.ultrabytecoder.coinsafebox.data.walletconnect.WcSessionRequestHandler
 import com.ultrabytecoder.coinsafebox.ui.viewmodel.CreateWalletFlowDraft
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -115,7 +116,7 @@ fun appModule(networkConfig: NetworkConfig) = module {
     single<WcSessionRepository> { SqlWcSessionRepository(get()) }
     single { WcPendingRequestHolder() }
     single { WcEthSigner(get<NetworkConfig>()) }
-    single { WcRequestHandler(get(), get<NetworkConfig>()) }
+    single<WcSessionRequestHandler> { WcRequestHandler(get(), get<NetworkConfig>()) }
     single {
         WcSessionManager(
             crypto = get(),
