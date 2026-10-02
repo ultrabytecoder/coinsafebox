@@ -9,6 +9,7 @@ import com.ultrabytecoder.coinsafebox.data.walletconnect.WcProtocolException
 import com.ultrabytecoder.coinsafebox.data.walletconnect.WcSessionManager
 import com.ultrabytecoder.coinsafebox.domain.model.AccountInfo
 import com.ultrabytecoder.coinsafebox.domain.model.AccountType
+import com.ultrabytecoder.coinsafebox.domain.usecase.GetAccountAddressUseCase
 import com.ultrabytecoder.coinsafebox.domain.usecase.GetAccountsUseCase
 import kotlin.time.Clock
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -26,6 +27,7 @@ class WcSessionProposalViewModel(
     private val walletId: Long,
     private val wcController: WcController,
     private val getAccounts: GetAccountsUseCase,
+    private val getAccountAddress: GetAccountAddressUseCase,
     private val networkConfig: NetworkConfig,
 ) : ViewModel() {
 
@@ -63,8 +65,14 @@ class WcSessionProposalViewModel(
                 _state.value = State(isLoading = false, error = "This connection request has expired.")
                 return@launch
             }
-            val accounts = getAccounts.byWallet(walletId).first()
-                .filter { it.type == AccountType.Eth && !it.address.isNullOrBlank() }
+            // ETH addresses are derived from the mnemonic at runtime (not stored
+            // in the DB), so we must resolve them via GetAccountAddressUseCase.
+            val ethAccounts = getAccounts.byWallet(walletId).first()
+                .filter { it.type == AccountType.Eth }
+            val resolvedAccounts = ethAccounts.map { acct ->
+                val addr = runCatching { getAccountAddress(acct.id) }.getOrNull()
+                acct.copy(address = addr)
+            }.filter { !it.address.isNullOrBlank() }
             val requestedChains = (
                 proposal.requiredNamespaces[WcSessionManager.EIP155]?.chains.orEmpty() +
                     proposal.optionalNamespaces[WcSessionManager.EIP155]?.chains.orEmpty()
@@ -76,8 +84,8 @@ class WcSessionProposalViewModel(
             _state.value = State(
                 isLoading = false,
                 proposal = proposal,
-                accounts = accounts,
-                selectedAddresses = accounts.firstOrNull()?.address?.let { setOf(it) } ?: emptySet(),
+                accounts = resolvedAccounts,
+                selectedAddresses = resolvedAccounts.firstOrNull()?.address?.let { setOf(it) } ?: emptySet(),
                 chainMismatch = chainMismatch,
             )
         }

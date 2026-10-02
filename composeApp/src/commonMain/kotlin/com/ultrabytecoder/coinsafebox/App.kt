@@ -370,9 +370,10 @@ fun App() {
             composable<Screen.WcSessionProposal> { backStackEntry ->
                 val route = backStackEntry.toRoute<Screen.WcSessionProposal>()
                 val getAccounts: GetAccountsUseCase = koinInject()
+                val getAccountAddress: GetAccountAddressUseCase = koinInject()
                 val networkConfig: com.ultrabytecoder.coinsafebox.data.NetworkConfig = koinInject()
                 val viewModel = rememberDisposableViewModel(route.proposalId, route.walletId) {
-                    WcSessionProposalViewModel(route.proposalId, route.walletId, wcController, getAccounts, networkConfig)
+                    WcSessionProposalViewModel(route.proposalId, route.walletId, wcController, getAccounts, getAccountAddress, networkConfig)
                 }
                 WcSessionProposalScreen(navController, viewModel)
             }
