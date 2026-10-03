@@ -15,6 +15,7 @@ import com.ultrabytecoder.coinsafebox.domain.usecase.DeleteAccountUseCase
 import com.ultrabytecoder.coinsafebox.domain.usecase.GetAccountAddressUseCase
 import com.ultrabytecoder.coinsafebox.domain.usecase.GetAccountsUseCase
 import com.ultrabytecoder.coinsafebox.ui.util.formatFiat
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -23,9 +24,12 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
 data class AccountDetailUiState(
@@ -43,6 +47,7 @@ sealed class AccountDetailsEvent {
     data class NavigateToAccountsList(val walletId: Long) : AccountDetailsEvent()
 }
 
+@OptIn(ExperimentalCoroutinesApi::class)
 class AccountDetailsViewModel(
     val accountId: String,
     val preselectedTokenId: String?,
@@ -90,8 +95,6 @@ class AccountDetailsViewModel(
     }
     .stateIn(viewModelScope, SharingStarted.Lazily, null)
 
-    private val pageSize = 20L
-
     init {
         viewModelScope.launch {
             try {
@@ -113,26 +116,29 @@ class AccountDetailsViewModel(
                     address = addr
                 )
                 _isReadOnly.value = walletRepository.getWallet(parent.walletId)?.isReadOnly ?: false
-                loadTransactions(selected.id)
             } catch (e: Exception) {
                 _uiState.value = _uiState.value.copy(error = e.message ?: "Failed to load account details")
             }
+        }
+        // Follow the selected account and re-emit on every DB write (e.g. sync()'s
+        // upsertAll) so an already-open screen picks up new transactions live.
+        viewModelScope.launch {
+            _selectedAccountFlow
+                .map { it?.id }
+                .filterNotNull()
+                .flatMapLatest { id -> transactionRepository.getTransactionsByAccountFlow(id) }
+                .collect { txs ->
+                    _uiState.update { it.copy(transactions = txs, hasMore = false, isLoadingMore = false) }
+                }
         }
     }
 
     fun selectAccount(account: AccountInfo) {
         _selectedAccountFlow.value = account
-        _uiState.value = _uiState.value.copy(
-            selectedAccount = account,
-            transactions = emptyList(),
-            hasMore = true
-        )
-        viewModelScope.launch { loadTransactions(account.id) }
+        _uiState.value = _uiState.value.copy(selectedAccount = account, transactions = emptyList())
     }
 
     fun loadNextPage() {
-        val selectedId = _uiState.value.selectedAccount?.id ?: return
-        viewModelScope.launch { loadTransactions(selectedId) }
     }
 
     fun clearError() {
@@ -148,25 +154,6 @@ class AccountDetailsViewModel(
             } catch (e: Exception) {
                 _uiState.value = _uiState.value.copy(error = e.message ?: "Failed to remove account")
             }
-        }
-    }
-
-    private suspend fun loadTransactions(accountId: String) {
-        if (_uiState.value.isLoadingMore || !_uiState.value.hasMore) return
-        _uiState.value = _uiState.value.copy(isLoadingMore = true)
-        try {
-            val currentTxs = _uiState.value.transactions
-            val newItems = transactionRepository.getTransactionsByAccount(
-                accountId, pageSize, currentTxs.size.toLong()
-            )
-            _uiState.value = _uiState.value.copy(
-                hasMore = newItems.size == pageSize.toInt(),
-                transactions = currentTxs + newItems
-            )
-        } catch (e: Exception) {
-            _uiState.value = _uiState.value.copy(error = e.message ?: "Failed to load transactions")
-        } finally {
-            _uiState.value = _uiState.value.copy(isLoadingMore = false)
         }
     }
 }
