@@ -290,7 +290,7 @@ class BtcProviderSyncTest {
             )
         )
 
-        provider.sync(ACCOUNT_ID)
+        provider.syncTransactions(ACCOUNT_ID)
 
         val transactions = fakeTransactionRepo.getTransactionsByAccount(ACCOUNT_ID, 100, 0)
         assertTrue(transactions.isNotEmpty(), "sync() should fetch and persist transactions")
@@ -318,7 +318,7 @@ class BtcProviderSyncTest {
             )
         )
 
-        provider.sync(ACCOUNT_ID, SyncMode.FULL)
+        provider.syncTransactions(ACCOUNT_ID, SyncMode.FULL)
 
         val transactions = fakeTransactionRepo.getTransactionsByAccount(ACCOUNT_ID, 100, 0)
         val aggregatedTx = transactions.filter {
@@ -342,7 +342,7 @@ class BtcProviderSyncTest {
             )
         )
 
-        provider.sync(ACCOUNT_ID)
+        provider.syncTransactions(ACCOUNT_ID)
 
         val transactions = fakeTransactionRepo.getTransactionsByAccount(ACCOUNT_ID, 100, 0)
         val outgoingTx = transactions.find {
@@ -366,7 +366,7 @@ class BtcProviderSyncTest {
             )
         )
 
-        provider.sync(ACCOUNT_ID)
+        provider.syncTransactions(ACCOUNT_ID)
 
         val transactions = fakeTransactionRepo.getTransactionsByAccount(ACCOUNT_ID, 100, 0)
         val incomingTx = transactions.find {
@@ -394,7 +394,7 @@ class BtcProviderSyncTest {
             )
         )
 
-        provider.sync(ACCOUNT_ID)
+        provider.syncTransactions(ACCOUNT_ID)
 
         val transactions = fakeTransactionRepo.getTransactionsByAccount(ACCOUNT_ID, 100, 0)
         val outgoingTx = transactions.find {
@@ -420,7 +420,7 @@ class BtcProviderSyncTest {
             )
         )
 
-        provider.sync(ACCOUNT_ID)
+        provider.syncTransactions(ACCOUNT_ID)
 
         val transactions = fakeTransactionRepo.getTransactionsByAccount(ACCOUNT_ID, 100, 0)
         val tx = transactions.find {
@@ -444,7 +444,7 @@ class BtcProviderSyncTest {
             )
         )
 
-        provider.sync(ACCOUNT_ID)
+        provider.syncTransactions(ACCOUNT_ID)
 
         val transactions = fakeTransactionRepo.getTransactionsByAccount(ACCOUNT_ID, 100, 0)
         val unconfirmedTx = transactions.find {
@@ -470,7 +470,7 @@ class BtcProviderSyncTest {
             )
         )
 
-        provider.sync(ACCOUNT_ID)
+        provider.syncTransactions(ACCOUNT_ID)
 
         val transactions = fakeTransactionRepo.getTransactionsByAccount(ACCOUNT_ID, 100, 0)
         val confirmedTx = transactions.find {
@@ -497,7 +497,7 @@ class BtcProviderSyncTest {
             )
         )
 
-        provider.sync(ACCOUNT_ID)
+        provider.syncTransactions(ACCOUNT_ID)
 
         val transactions = fakeTransactionRepo.getTransactionsByAccount(ACCOUNT_ID, 100, 0)
         val outgoingTx = transactions.find {
@@ -521,7 +521,7 @@ class BtcProviderSyncTest {
             )
         )
 
-        provider2.sync(ACCOUNT_ID)
+        provider2.syncTransactions(ACCOUNT_ID)
 
         val incomingTxs = fakeTransactionRepo2.getTransactionsByAccount(ACCOUNT_ID, 100, 0)
         val incomingTx = incomingTxs.find {
@@ -547,7 +547,7 @@ class BtcProviderSyncTest {
             )
         )
 
-        provider.sync(ACCOUNT_ID)
+        provider.syncTransactions(ACCOUNT_ID)
 
         val transactions = fakeTransactionRepo.getTransactionsByAccount(ACCOUNT_ID, 100, 0)
         assertEquals(0, transactions.size, "Empty mempool response should result in no transactions (no crash)")

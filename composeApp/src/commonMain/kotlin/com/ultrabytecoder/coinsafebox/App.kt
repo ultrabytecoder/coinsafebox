@@ -77,8 +77,9 @@ import com.ultrabytecoder.coinsafebox.domain.usecase.CreateWalletUseCase
 import com.ultrabytecoder.coinsafebox.domain.usecase.GetAccountsUseCase
 import com.ultrabytecoder.coinsafebox.domain.usecase.GetWalletsUseCase
 import com.ultrabytecoder.coinsafebox.domain.usecase.SendUseCase
-import com.ultrabytecoder.coinsafebox.domain.usecase.SyncAccountUseCase
-import com.ultrabytecoder.coinsafebox.domain.usecase.SyncUseCase
+import com.ultrabytecoder.coinsafebox.domain.usecase.SyncAccountBalanceUseCase
+import com.ultrabytecoder.coinsafebox.domain.usecase.SyncBalanceUseCase
+import com.ultrabytecoder.coinsafebox.domain.usecase.SyncTransactionsUseCase
 import com.ultrabytecoder.coinsafebox.domain.usecase.CreateAccountUseCase
 import com.ultrabytecoder.coinsafebox.domain.usecase.AddTokenUseCase
 import com.ultrabytecoder.coinsafebox.domain.usecase.CreateTokenUseCase
@@ -211,13 +212,13 @@ fun App() {
                 val route = backStackEntry.toRoute<Screen.AccountsList>()
                 val getAccounts: GetAccountsUseCase = koinInject()
                 val getWallets: GetWalletsUseCase = koinInject()
-                val syncUseCase: SyncUseCase = koinInject()
+                val syncBalanceUseCase: SyncBalanceUseCase = koinInject()
                 val syncManager: SyncManager = koinInject()
                 val settingsStorage: com.ultrabytecoder.coinsafebox.data.SettingsStorage = koinInject()
                 val quoteProvider: FiatQuoteProvider = koinInject()
                 val viewModel = rememberDisposableViewModel(route.walletId) {
                     AccountsListViewModel(
-                        route.walletId, getAccounts, getWallets, syncUseCase, syncManager,
+                        route.walletId, getAccounts, getWallets, syncBalanceUseCase, syncManager,
                         settingsStorage, quoteProvider
                     )
                 }
@@ -231,13 +232,15 @@ fun App() {
                 val transactionRepository: TransactionRepository = koinInject()
                 val walletRepository: com.ultrabytecoder.coinsafebox.domain.repository.WalletRepository = koinInject()
                 val deleteAccountUseCase: DeleteAccountUseCase = koinInject()
+                val syncTransactionsUseCase: SyncTransactionsUseCase = koinInject()
+                val syncManager: SyncManager = koinInject()
                 val settingsStorage: com.ultrabytecoder.coinsafebox.data.SettingsStorage = koinInject()
                 val quoteProvider: FiatQuoteProvider = koinInject()
                 val viewModel = rememberDisposableViewModel(route.accountId, route.preselectedTokenId) {
                     AccountDetailsViewModel(
                         route.accountId, route.preselectedTokenId, getAccounts, getAccountAddress,
                         accountRepository, transactionRepository, walletRepository, deleteAccountUseCase,
-                        settingsStorage, quoteProvider
+                        syncTransactionsUseCase, syncManager, settingsStorage, quoteProvider
                     )
                 }
                 AccountDetailsScreen(navController, viewModel)
@@ -247,7 +250,7 @@ fun App() {
                 val getAccounts: GetAccountsUseCase = koinInject()
                 val send: SendUseCase = koinInject()
                 val estimateFee: EstimateFeeUseCase = koinInject()
-                val syncAccount: SyncAccountUseCase = koinInject()
+                val syncAccount: SyncAccountBalanceUseCase = koinInject()
                 val accountRepository: com.ultrabytecoder.coinsafebox.domain.repository.AccountRepository = koinInject()
                 val utxoRepository: com.ultrabytecoder.coinsafebox.domain.repository.UtxoRepository = koinInject()
                 val transactionRepository: com.ultrabytecoder.coinsafebox.domain.repository.TransactionRepository = koinInject()
@@ -340,12 +343,12 @@ fun App() {
             composable<Screen.EnterPin> {
                 val verifyPin: VerifyPinUseCase = koinInject()
                 val getWallets: GetWalletsUseCase = koinInject()
-                val syncUseCase: SyncUseCase = koinInject()
+                val syncBalanceUseCase: SyncBalanceUseCase = koinInject()
                 val checkPinStatus: CheckPinStatusUseCase = koinInject()
                 val getSecurityMethod: GetSecurityMethodUseCase = koinInject()
                 val settingsStorage: com.ultrabytecoder.coinsafebox.data.SettingsStorage = koinInject()
                 val reconcileAddresses: com.ultrabytecoder.coinsafebox.domain.usecase.ReconcileAddressesUseCase = koinInject()
-                val viewModel = rememberDisposableViewModel { EnterPinViewModel(verifyPin, getWallets, syncUseCase, checkPinStatus, getSecurityMethod, settingsStorage, wcController, reconcileAddresses) }
+                val viewModel = rememberDisposableViewModel { EnterPinViewModel(verifyPin, getWallets, syncBalanceUseCase, checkPinStatus, getSecurityMethod, settingsStorage, wcController, reconcileAddresses) }
                 PinScreenEnter(navController, viewModel)
             }
             composable<Screen.Settings> {

@@ -190,7 +190,7 @@ class Trc20TokenProviderSyncTest {
             createClient = createMockClientFactory(transactionsResponse = response)
         )
 
-        providerWithMock.sync(ACCOUNT_ID)
+        providerWithMock.syncTransactions(ACCOUNT_ID)
 
         val transactions = fakeTransactionRepo.getTransactionsByAccount(ACCOUNT_ID, 100, 0)
         assertEquals(2, transactions.size, "Should parse and persist 2 TRC20 transactions")
@@ -209,7 +209,7 @@ class Trc20TokenProviderSyncTest {
             createClient = createMockClientFactory(transactionsResponse = response)
         )
 
-        providerWithMock.sync(ACCOUNT_ID)
+        providerWithMock.syncTransactions(ACCOUNT_ID)
 
         val transactions = fakeTransactionRepo.getTransactionsByAccount(ACCOUNT_ID, 100, 0)
         val outgoingTx = transactions.find {
@@ -233,7 +233,7 @@ class Trc20TokenProviderSyncTest {
             createClient = createMockClientFactory(transactionsResponse = response)
         )
 
-        providerWithMock.sync(ACCOUNT_ID)
+        providerWithMock.syncTransactions(ACCOUNT_ID)
 
         val transactions = fakeTransactionRepo.getTransactionsByAccount(ACCOUNT_ID, 100, 0)
         val incomingTx = transactions.find {
@@ -257,7 +257,7 @@ class Trc20TokenProviderSyncTest {
             createClient = createMockClientFactory(transactionsResponse = response)
         )
 
-        providerWithMock.sync(ACCOUNT_ID)
+        providerWithMock.syncTransactions(ACCOUNT_ID)
 
         val transactions = fakeTransactionRepo.getTransactionsByAccount(ACCOUNT_ID, 100, 0)
         val outgoingTx = transactions.find {
@@ -281,7 +281,7 @@ class Trc20TokenProviderSyncTest {
             createClient = createMockClientFactory(transactionsResponse = response)
         )
 
-        providerWithMock.sync(ACCOUNT_ID)
+        providerWithMock.syncTransactions(ACCOUNT_ID)
 
         val transactions = fakeTransactionRepo.getTransactionsByAccount(ACCOUNT_ID, 100, 0)
         val tx = transactions.first()
@@ -307,7 +307,7 @@ class Trc20TokenProviderSyncTest {
             createClient = createMockClientFactory(transactionsResponse = response)
         )
 
-        providerWithMock.sync(ACCOUNT_ID)
+        providerWithMock.syncTransactions(ACCOUNT_ID)
 
         val transactions = fakeTransactionRepo.getTransactionsByAccount(ACCOUNT_ID, 100, 0)
         val successTx = transactions.find {
@@ -331,7 +331,7 @@ class Trc20TokenProviderSyncTest {
             createClient = createMockClientFactory(transactionsResponse = EMPTY_TRANSACTIONS_RESPONSE)
         )
 
-        providerWithMock.sync(ACCOUNT_ID)
+        providerWithMock.syncTransactions(ACCOUNT_ID)
 
         val transactions = fakeTransactionRepo.getTransactionsByAccount(ACCOUNT_ID, 100, 0)
         assertEquals(0, transactions.size,
@@ -351,7 +351,7 @@ class Trc20TokenProviderSyncTest {
             createClient = createMockClientFactory(transactionsResponse = response)
         )
 
-        providerWithMock.sync(ACCOUNT_ID)
+        providerWithMock.syncTransactions(ACCOUNT_ID)
 
         val transactions = fakeTransactionRepo.getTransactionsByAccount(ACCOUNT_ID, 100, 0)
         assertEquals(0, transactions.size,

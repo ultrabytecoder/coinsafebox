@@ -179,7 +179,7 @@ class TonProviderSyncTest {
             createClient = createMockClientFactory(transactionsResponse = responseJson)
         )
 
-        providerWithMock.sync(ACCOUNT_ID)
+        providerWithMock.syncTransactions(ACCOUNT_ID)
 
         val transactions = fakeTransactionRepo.getTransactionsByAccount(ACCOUNT_ID, 100, 0)
         assertEquals(2, transactions.size, "Should parse and persist 2 transactions")
@@ -201,7 +201,7 @@ class TonProviderSyncTest {
             createClient = createMockClientFactory(transactionsResponse = responseJson)
         )
 
-        providerWithMock.sync(ACCOUNT_ID)
+        providerWithMock.syncTransactions(ACCOUNT_ID)
 
         val transactions = fakeTransactionRepo.getTransactionsByAccount(ACCOUNT_ID, 100, 0)
         val outgoingTx = transactions.find { it.txHash == "123456790:abchash002" }
@@ -228,7 +228,7 @@ class TonProviderSyncTest {
             createClient = createMockClientFactory(transactionsResponse = responseJson)
         )
 
-        providerWithMock.sync(ACCOUNT_ID)
+        providerWithMock.syncTransactions(ACCOUNT_ID)
 
         val transactions = fakeTransactionRepo.getTransactionsByAccount(ACCOUNT_ID, 100, 0)
         val incomingTx = transactions.find { it.txHash == "123456789:abchash001" }
@@ -255,7 +255,7 @@ class TonProviderSyncTest {
             createClient = createMockClientFactory(transactionsResponse = responseJson)
         )
 
-        providerWithMock.sync(ACCOUNT_ID)
+        providerWithMock.syncTransactions(ACCOUNT_ID)
 
         val transactions = fakeTransactionRepo.getTransactionsByAccount(ACCOUNT_ID, 100, 0)
         val tx = transactions.find { it.txHash == "123456789:abchash001" }
@@ -284,7 +284,7 @@ class TonProviderSyncTest {
             createClient = createMockClientFactory(transactionsResponse = responseJson)
         )
 
-        providerWithMock.sync(ACCOUNT_ID)
+        providerWithMock.syncTransactions(ACCOUNT_ID)
 
         val transactions = fakeTransactionRepo.getTransactionsByAccount(ACCOUNT_ID, 100, 0)
         assertEquals(1, transactions.size, "Multi-message tx should produce 1 TransactionInfo, not 2")
@@ -306,7 +306,7 @@ class TonProviderSyncTest {
             createClient = createMockClientFactory(transactionsResponse = responseJson)
         )
 
-        providerWithMock.sync(ACCOUNT_ID)
+        providerWithMock.syncTransactions(ACCOUNT_ID)
 
         val transactions = fakeTransactionRepo.getTransactionsByAccount(ACCOUNT_ID, 100, 0)
         transactions.forEach { tx ->
@@ -326,7 +326,7 @@ class TonProviderSyncTest {
             createClient = createMockClientFactory(transactionsResponse = EMPTY_TRANSACTIONS_RESPONSE)
         )
 
-        providerWithMock.sync(ACCOUNT_ID)
+        providerWithMock.syncTransactions(ACCOUNT_ID)
 
         val transactions = fakeTransactionRepo.getTransactionsByAccount(ACCOUNT_ID, 100, 0)
         assertEquals(0, transactions.size, "Empty result array should result in no transactions")
@@ -348,7 +348,7 @@ class TonProviderSyncTest {
             createClient = createMockClientFactory(transactionsResponse = responseJson)
         )
 
-        providerWithMock.sync(ACCOUNT_ID)
+        providerWithMock.syncTransactions(ACCOUNT_ID)
 
         val transactions = fakeTransactionRepo.getTransactionsByAccount(ACCOUNT_ID, 100, 0)
         // Second tx has fee: 1000000

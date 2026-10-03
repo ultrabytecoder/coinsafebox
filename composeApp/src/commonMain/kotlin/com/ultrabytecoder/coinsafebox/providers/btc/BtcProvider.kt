@@ -176,29 +176,16 @@ class BtcProvider(
         return receiveDeriver to changeDeriver
     }
 
-    override suspend fun sync(accountId: String, syncMode: SyncMode) {
-        println("BtcProvider.sync() started: accountId=$accountId, syncMode=$syncMode")
+    override suspend fun syncBalance(accountId: String, syncMode: SyncMode) {
+        println("BtcProvider.syncBalance() started: accountId=$accountId, syncMode=$syncMode")
         val account = accountRepository.getAccount(accountId) ?: return
         val derivationIndex = account.accountIndex!!
         val (receiveDeriver, changeDeriver) = resolveDeriveFunctions(account)
 
-        val receiveStartIndex = when (syncMode) {
-            SyncMode.FULL -> 0L
-            SyncMode.NORMAL -> minOf(
-                params["current_receive_key_id"]?.jsonPrimitive?.long ?: 0L,
-                minDbIndexForChain(accountId, RECEIVE_CHAIN, derivationIndex)
-            )
-        }
-        val changeStartIndex = when (syncMode) {
-            SyncMode.FULL -> 0L
-            SyncMode.NORMAL -> minOf(
-                params["current_change_key_id"]?.jsonPrimitive?.long ?: 0L,
-                minDbIndexForChain(accountId, CHANGE_CHAIN, derivationIndex)
-            )
-        }
+        val receiveStartIndex = scanStartIndex(accountId, RECEIVE_CHAIN, derivationIndex, params["current_receive_key_id"]?.jsonPrimitive?.long, syncMode)
+        val changeStartIndex = scanStartIndex(accountId, CHANGE_CHAIN, derivationIndex, params["current_change_key_id"]?.jsonPrimitive?.long, syncMode)
 
         val client = createClient()
-        val transactions: List<TransactionInfo>
         try {
             val highestReceiveIndex = scanChain(client, accountId, RECEIVE_CHAIN, derivationIndex, receiveStartIndex, receiveDeriver)
             val highestChangeIndex = scanChain(client, accountId, CHANGE_CHAIN, derivationIndex, changeStartIndex, changeDeriver)
@@ -214,18 +201,41 @@ class BtcProvider(
                 val updatedParams = JsonObject(params.toMutableMap() + updates)
                 accountRepository.updateParams(accountId, updatedParams.toString())
             }
-
-            // Fetch and persist transactions using same client
-            transactions = fetchTransactionsForAccount(account.id, syncMode, client, receiveDeriver, changeDeriver)
-            transactionRepository.upsertAll(transactions)
         } finally {
             client.close()
         }
 
-        val rawBalance = balance(account.id)
+        val rawBalance = balance(accountId)
         val normalized = rawBalance.divide(BigDecimal.fromLong(100_000_000)).toPlainString()
-        accountRepository.updateAmount(account.id, normalized)
-        println("BtcProvider.sync() completed: accountId=$accountId, derivationIndex=$derivationIndex, balance=$normalized BTC, transactions=${transactions.size}")
+        accountRepository.updateAmount(accountId, normalized)
+        println("BtcProvider.syncBalance() completed: accountId=$accountId, balance=$normalized BTC")
+    }
+
+    override suspend fun syncTransactions(accountId: String, syncMode: SyncMode) {
+        println("BtcProvider.syncTransactions() started: accountId=$accountId, syncMode=$syncMode")
+        val account = accountRepository.getAccount(accountId) ?: return
+        val derivationIndex = account.accountIndex!!
+        val (receiveDeriver, changeDeriver) = resolveDeriveFunctions(account)
+
+        val client = createClient()
+        try {
+            val transactions = fetchTransactionsForAccount(accountId, syncMode, client, receiveDeriver, changeDeriver)
+            transactionRepository.upsertAll(transactions)
+            println("BtcProvider.syncTransactions() completed: accountId=$accountId, transactions=${transactions.size}")
+        } finally {
+            client.close()
+        }
+    }
+
+    private suspend fun scanStartIndex(
+        accountId: String,
+        chain: Int,
+        derivationIndex: Long,
+        currentKeyId: Long?,
+        syncMode: SyncMode
+    ): Long = when (syncMode) {
+        SyncMode.FULL -> 0L
+        SyncMode.NORMAL -> minOf(currentKeyId ?: 0L, minDbIndexForChain(accountId, chain, derivationIndex))
     }
 
     private suspend fun fetchTransactionsForAccount(

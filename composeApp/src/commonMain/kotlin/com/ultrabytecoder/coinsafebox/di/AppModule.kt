@@ -35,9 +35,10 @@ import com.ultrabytecoder.coinsafebox.domain.usecase.RemoveMasterKeyUseCase
 import com.ultrabytecoder.coinsafebox.domain.usecase.GetSecurityMethodUseCase
 import com.ultrabytecoder.coinsafebox.domain.usecase.SetSecurityMethodUseCase
 import com.ultrabytecoder.coinsafebox.domain.usecase.SetupPinUseCase
-import com.ultrabytecoder.coinsafebox.domain.usecase.SyncAccountUseCase
+import com.ultrabytecoder.coinsafebox.domain.usecase.SyncAccountBalanceUseCase
+import com.ultrabytecoder.coinsafebox.domain.usecase.SyncBalanceUseCase
 import com.ultrabytecoder.coinsafebox.domain.usecase.SyncManager
-import com.ultrabytecoder.coinsafebox.domain.usecase.SyncUseCase
+import com.ultrabytecoder.coinsafebox.domain.usecase.SyncTransactionsUseCase
 import com.ultrabytecoder.coinsafebox.domain.usecase.VerifyPinUseCase
 import com.ultrabytecoder.coinsafebox.security.KeyManager
 import com.ultrabytecoder.coinsafebox.security.SessionManager
@@ -97,8 +98,9 @@ fun appModule(networkConfig: NetworkConfig) = module {
     factory { RemoveMasterKeyUseCase(get(), get(), get()) }
     factory { ReconcileAddressesUseCase(get(), get(), get(), get(), get(), get()) }
     single { SyncManager() }
-    factory { SyncUseCase(get(), get(), get(), get(), get(), get(), get()) }
-    factory { SyncAccountUseCase(get(), get(), get(), get(), get(), get(), get()) }
+    factory { SyncBalanceUseCase(get(), get(), get(), get(), get(), get(), get()) }
+    factory { SyncAccountBalanceUseCase(get(), get(), get(), get(), get(), get(), get()) }
+    factory { SyncTransactionsUseCase(get(), get(), get(), get(), get(), get(), get()) }
 
     single<PinRepository> { PinRepositoryImpl(get(), get(), get(), get()) }
     factory { CheckPinStatusUseCase(get()) }

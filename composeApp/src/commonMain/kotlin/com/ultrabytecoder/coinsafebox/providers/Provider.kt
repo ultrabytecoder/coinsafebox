@@ -19,7 +19,8 @@ interface Provider {
     ): String
     suspend fun broadcast(rawTransaction: String): String
     suspend fun send(address: String, amount: BigDecimal, accountId: String): String
-    suspend fun sync(accountId: String, syncMode: SyncMode = SyncMode.NORMAL) {}
+    suspend fun syncBalance(accountId: String, syncMode: SyncMode = SyncMode.NORMAL)
+    suspend fun syncTransactions(accountId: String, syncMode: SyncMode = SyncMode.NORMAL)
     suspend fun balance(accountId: String): BigDecimal
     suspend fun estimateFee(
         accountId: String,

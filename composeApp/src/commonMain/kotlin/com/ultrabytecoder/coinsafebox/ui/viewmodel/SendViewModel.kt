@@ -24,7 +24,7 @@ import com.ultrabytecoder.coinsafebox.domain.service.KeyProvider
 import com.ultrabytecoder.coinsafebox.domain.usecase.EstimateFeeUseCase
 import com.ultrabytecoder.coinsafebox.domain.usecase.GetAccountsUseCase
 import com.ultrabytecoder.coinsafebox.domain.usecase.SendUseCase
-import com.ultrabytecoder.coinsafebox.domain.usecase.SyncAccountUseCase
+import com.ultrabytecoder.coinsafebox.domain.usecase.SyncAccountBalanceUseCase
 import com.ultrabytecoder.coinsafebox.providers.ProviderFactory
 import com.ultrabytecoder.coinsafebox.security.SessionLockNotifier
 import com.ultrabytecoder.coinsafebox.ui.util.BalanceSufficiency
@@ -84,7 +84,7 @@ class SendViewModel(
     private val getAccounts: GetAccountsUseCase,
     private val send: SendUseCase,
     private val estimateFeeUseCase: EstimateFeeUseCase,
-    private val syncAccount: SyncAccountUseCase,
+    private val syncAccount: SyncAccountBalanceUseCase,
     private val accountRepository: AccountRepository,
     private val utxoRepository: UtxoRepository,
     private val transactionRepository: TransactionRepository,

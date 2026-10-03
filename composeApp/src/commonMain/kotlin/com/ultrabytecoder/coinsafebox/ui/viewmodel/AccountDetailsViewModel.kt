@@ -14,6 +14,9 @@ import com.ultrabytecoder.coinsafebox.domain.repository.WalletRepository
 import com.ultrabytecoder.coinsafebox.domain.usecase.DeleteAccountUseCase
 import com.ultrabytecoder.coinsafebox.domain.usecase.GetAccountAddressUseCase
 import com.ultrabytecoder.coinsafebox.domain.usecase.GetAccountsUseCase
+import com.ultrabytecoder.coinsafebox.domain.usecase.SyncManager
+import com.ultrabytecoder.coinsafebox.domain.usecase.SyncTransactionsUseCase
+import com.ultrabytecoder.coinsafebox.providers.SyncMode
 import com.ultrabytecoder.coinsafebox.ui.util.formatFiat
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -39,6 +42,7 @@ data class AccountDetailUiState(
     val address: String? = null,
     val transactions: List<TransactionInfo> = emptyList(),
     val isLoadingMore: Boolean = false,
+    val isSyncingTransactions: Boolean = false,
     val hasMore: Boolean = true,
     val error: String? = null
 )
@@ -57,6 +61,8 @@ class AccountDetailsViewModel(
     private val transactionRepository: TransactionRepository,
     private val walletRepository: WalletRepository,
     private val deleteAccountUseCase: DeleteAccountUseCase,
+    private val syncTransactionsUseCase: SyncTransactionsUseCase,
+    private val syncManager: SyncManager,
     settingsStorage: SettingsStore,
     private val quoteProvider: FiatQuoteProvider
 ) : ViewModel() {
@@ -116,11 +122,15 @@ class AccountDetailsViewModel(
                     address = addr
                 )
                 _isReadOnly.value = walletRepository.getWallet(parent.walletId)?.isReadOnly ?: false
+
+                // The transactions list is synced at Account Details startup. The reactive
+                // flow below re-emits when the sync's upserts commit, so no manual re-read.
+                triggerTxSync(selected.id)
             } catch (e: Exception) {
                 _uiState.value = _uiState.value.copy(error = e.message ?: "Failed to load account details")
             }
         }
-        // Follow the selected account and re-emit on every DB write (e.g. sync()'s
+        // Follow the selected account and re-emit on every DB write (e.g. syncTransactions'
         // upsertAll) so an already-open screen picks up new transactions live.
         viewModelScope.launch {
             _selectedAccountFlow
@@ -131,11 +141,31 @@ class AccountDetailsViewModel(
                     _uiState.update { it.copy(transactions = txs, hasMore = false, isLoadingMore = false) }
                 }
         }
+        // Spinner: is the currently selected account being transaction-synced?
+        viewModelScope.launch {
+            _selectedAccountFlow
+                .map { it?.id }
+                .filterNotNull()
+                .flatMapLatest { id -> syncManager.syncingTransactionsAccounts.map { id in it } }
+                .collect { syncing ->
+                    _uiState.update { it.copy(isSyncingTransactions = syncing) }
+                }
+        }
     }
 
     fun selectAccount(account: AccountInfo) {
         _selectedAccountFlow.value = account
         _uiState.value = _uiState.value.copy(selectedAccount = account, transactions = emptyList())
+        // A chip tap is a fresh view of another account: sync its transactions too.
+        viewModelScope.launch { triggerTxSync(account.id) }
+    }
+
+    private suspend fun triggerTxSync(accountId: String) {
+        // FULL on a first-ever open of an account (no cached txs) to backfill history;
+        // NORMAL (incremental) afterwards. The committed upserts notify the reactive
+        // transactions flow (SQLDelight asFlow), which refreshes the list.
+        val mode = if (transactionRepository.getTransactionCount(accountId) == 0L) SyncMode.FULL else SyncMode.NORMAL
+        syncTransactionsUseCase(accountId, mode)
     }
 
     fun loadNextPage() {

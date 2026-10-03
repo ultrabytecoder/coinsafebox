@@ -246,7 +246,7 @@ class TrxProviderSyncTest {
             createClient = createMockClientFactory(transactionsResponse = responseJson)
         )
 
-        providerWithMock.sync(ACCOUNT_ID)
+        providerWithMock.syncTransactions(ACCOUNT_ID)
 
         val transactions = fakeTransactionRepo.getTransactionsByAccount(ACCOUNT_ID, 100, 0)
         assertEquals(2, transactions.size, "Should parse and persist 2 transactions")
@@ -269,7 +269,7 @@ class TrxProviderSyncTest {
             createClient = createMockClientFactory(transactionsResponse = responseJson)
         )
 
-        providerWithMock.sync(ACCOUNT_ID)
+        providerWithMock.syncTransactions(ACCOUNT_ID)
 
         val transactions = fakeTransactionRepo.getTransactionsByAccount(ACCOUNT_ID, 100, 0)
         val outgoingTx = transactions.find {
@@ -295,7 +295,7 @@ class TrxProviderSyncTest {
             createClient = createMockClientFactory(transactionsResponse = responseJson)
         )
 
-        providerWithMock.sync(ACCOUNT_ID)
+        providerWithMock.syncTransactions(ACCOUNT_ID)
 
         val transactions = fakeTransactionRepo.getTransactionsByAccount(ACCOUNT_ID, 100, 0)
         val incomingTx = transactions.find {
@@ -321,7 +321,7 @@ class TrxProviderSyncTest {
             createClient = createMockClientFactory(transactionsResponse = responseJson)
         )
 
-        providerWithMock.sync(ACCOUNT_ID)
+        providerWithMock.syncTransactions(ACCOUNT_ID)
 
         val transactions = fakeTransactionRepo.getTransactionsByAccount(ACCOUNT_ID, 100, 0)
         val confirmedTx = transactions.find {
@@ -347,7 +347,7 @@ class TrxProviderSyncTest {
             createClient = createMockClientFactory(transactionsResponse = responseJson)
         )
 
-        providerWithMock.sync(ACCOUNT_ID)
+        providerWithMock.syncTransactions(ACCOUNT_ID)
 
         val transactions = fakeTransactionRepo.getTransactionsByAccount(ACCOUNT_ID, 100, 0)
         val failedTx = transactions.find {
@@ -364,7 +364,7 @@ class TrxProviderSyncTest {
             createClient = createMockClientFactory(transactionsResponse = EMPTY_TRANSACTIONS_RESPONSE)
         )
 
-        providerWithMock.sync(ACCOUNT_ID)
+        providerWithMock.syncTransactions(ACCOUNT_ID)
 
         val transactions = fakeTransactionRepo.getTransactionsByAccount(ACCOUNT_ID, 100, 0)
         assertEquals(0, transactions.size, "Empty data array should result in no transactions")
@@ -388,7 +388,7 @@ class TrxProviderSyncTest {
             createClient = createMockClientFactory(transactionsResponse = responseJson)
         )
 
-        providerWithMock.sync(ACCOUNT_ID)
+        providerWithMock.syncTransactions(ACCOUNT_ID)
 
         val transactions = fakeTransactionRepo.getTransactionsByAccount(ACCOUNT_ID, 100, 0)
         val outgoingTx = transactions.find {
@@ -415,7 +415,7 @@ class TrxProviderSyncTest {
             createClient = createMockClientFactory(transactionsResponse = responseJson)
         )
 
-        providerWithMock.sync(ACCOUNT_ID)
+        providerWithMock.syncTransactions(ACCOUNT_ID)
 
         val transactions = fakeTransactionRepo.getTransactionsByAccount(ACCOUNT_ID, 100, 0)
         val feeTx = transactions.find {
@@ -442,7 +442,7 @@ class TrxProviderSyncTest {
             createClient = createMockClientFactory(transactionsResponse = responseJson)
         )
 
-        providerWithMock.sync(ACCOUNT_ID)
+        providerWithMock.syncTransactions(ACCOUNT_ID)
 
         val transactions = fakeTransactionRepo.getTransactionsByAccount(ACCOUNT_ID, 100, 0)
         val noFeeTx = transactions.find {

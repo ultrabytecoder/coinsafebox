@@ -63,11 +63,13 @@ class TrxProvider(
         return trxAddressFromDerivedKey(key)
     }
 
-    override suspend fun sync(accountId: String, syncMode: SyncMode) {
+    override suspend fun syncBalance(accountId: String, syncMode: SyncMode) {
         val rawBalance = balance(accountId)
         val normalized = sunToTrx(rawBalance).toPlainString()
         accountRepository.updateAmount(accountId, normalized)
+    }
 
+    override suspend fun syncTransactions(accountId: String, syncMode: SyncMode) {
         val address = getAddress(accountId)
         val transactions = fetchTransactions(address, accountId, syncMode)
         transactionRepository.upsertAll(transactions)

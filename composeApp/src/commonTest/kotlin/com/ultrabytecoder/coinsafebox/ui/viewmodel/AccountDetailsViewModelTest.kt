@@ -17,6 +17,9 @@ import com.ultrabytecoder.coinsafebox.domain.service.KeyProvider
 import com.ultrabytecoder.coinsafebox.domain.usecase.DeleteAccountUseCase
 import com.ultrabytecoder.coinsafebox.domain.usecase.GetAccountAddressUseCase
 import com.ultrabytecoder.coinsafebox.domain.usecase.GetAccountsUseCase
+import com.ultrabytecoder.coinsafebox.domain.usecase.SyncManager
+import com.ultrabytecoder.coinsafebox.domain.usecase.SyncTransactionsUseCase
+import com.ultrabytecoder.coinsafebox.providers.SyncMode
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
@@ -119,10 +122,28 @@ class AccountDetailsViewModelTest {
         override suspend fun getPrice(cryptoSymbol: String, fiat: FiatCurrency): Double = 0.0
     }
 
+    private class NoopSyncTransactionsUseCase(
+        accountRepository: AccountRepository,
+        utxoRepository: UtxoRepository,
+        transactionRepository: TransactionRepository,
+        keyProvider: KeyProvider,
+        networkConfig: NetworkConfig,
+        syncManager: SyncManager,
+        walletRepository: WalletRepository
+    ) : SyncTransactionsUseCase(
+        accountRepository, utxoRepository, transactionRepository, keyProvider, networkConfig, syncManager, walletRepository
+    ) {
+        override suspend operator fun invoke(accountId: String, syncMode: SyncMode) {}
+    }
+
     private fun buildViewModel(repo: RecordingAccountRepository): AccountDetailsViewModel {
         val walletRepo = FakeWalletRepository(WalletInfo(1L, "My wallet", isReadOnly = false, hasPassphrase = false))
         val utxo = NoopUtxoRepository()
         val tx = NoopTransactionRepository()
+        val syncManager = SyncManager()
+        val syncTransactionsUseCase = NoopSyncTransactionsUseCase(
+            repo, utxo, tx, StubKeyProvider(), NetworkConfig.testnet("test-key"), syncManager, walletRepo
+        )
         return AccountDetailsViewModel(
             accountId = "parent",
             preselectedTokenId = null,
@@ -134,6 +155,8 @@ class AccountDetailsViewModelTest {
             transactionRepository = tx,
             walletRepository = walletRepo,
             deleteAccountUseCase = DeleteAccountUseCase(repo, utxo, tx),
+            syncTransactionsUseCase = syncTransactionsUseCase,
+            syncManager = syncManager,
             settingsStorage = InMemorySettingsStore(),
             quoteProvider = StubQuoteProvider()
         )

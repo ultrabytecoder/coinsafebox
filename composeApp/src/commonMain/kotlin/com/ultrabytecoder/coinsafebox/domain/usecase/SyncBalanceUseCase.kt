@@ -14,7 +14,12 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
-class SyncUseCase(
+/**
+ * Wallet-wide balance sync: fan out one balance sync per account of the wallet.
+ * Fire-and-forget; per-account errors are swallowed. Balance sync does NOT touch
+ * the transactions table (that is the responsibility of [SyncTransactionsUseCase]).
+ */
+class SyncBalanceUseCase(
     private val accountRepository: AccountRepository,
     private val utxoRepository: UtxoRepository,
     private val transactionRepository: TransactionRepository,
@@ -25,14 +30,14 @@ class SyncUseCase(
 ) {
     operator fun invoke(scope: CoroutineScope, walletId: Long, syncMode: SyncMode = SyncMode.NORMAL) {
         scope.launch {
-            println("Start syncing accounts of wallet $walletId (mode=$syncMode)")
+            println("Start balance-syncing accounts of wallet $walletId (mode=$syncMode)")
 
             val accounts = accountRepository.getAccountsByWalletFlow(walletId).first()
 
             for (account in accounts) {
                 launch {
-                    if (!syncManager.tryAcquire(account.id)) {
-                        println("Sync already in progress for ${account.id}, skipping")
+                    if (!syncManager.tryAcquireBalance(account.id)) {
+                        println("Balance sync already in progress for ${account.id}, skipping")
                         return@launch
                     }
                     try {
@@ -40,11 +45,11 @@ class SyncUseCase(
                         if (wallet.isReadOnly) {
                             val xpub = if (account.type is AccountType.Btc) accountRepository.getXpub(account.id) else null
                             val provider = ProviderFactory.createReadOnly(account.type, xpub, utxoRepository, accountRepository, transactionRepository, networkConfig, account.params)
-                            provider.sync(account.id, syncMode)
+                            provider.syncBalance(account.id, syncMode)
                         } else {
                             keyProvider.withMasterSeed(account.walletId) { masterSeed ->
                                 val provider = ProviderFactory.create(account.type, masterSeed, utxoRepository, accountRepository, transactionRepository, networkConfig, account.params)
-                                provider.sync(account.id, syncMode)
+                                provider.syncBalance(account.id, syncMode)
                             }
                         }
                     } catch (e: CancellationException) {
@@ -52,9 +57,9 @@ class SyncUseCase(
                         // failed one (which would surface a misleading error).
                         throw e
                     } catch (e: Exception) {
-                        println("Sync failed for account ${account.id}: ${e.message}")
+                        println("Balance sync failed for account ${account.id}: ${e.message}")
                     } finally {
-                        syncManager.release(account.id)
+                        syncManager.releaseBalance(account.id)
                     }
                 }
             }

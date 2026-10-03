@@ -72,15 +72,17 @@ class Trc20TokenProvider(
         return trxAddressFromDerivedKey(key)
     }
 
-    override suspend fun sync(accountId: String, syncMode: SyncMode) {
+    override suspend fun syncBalance(accountId: String, syncMode: SyncMode) {
         try {
             val rawBalance = balance(accountId)
             val normalized = rawBalance.toPlainString()
             accountRepository.updateAmount(accountId, normalized)
         } catch (_: Exception) {
-            // Balance RPC failed; preserve existing amount and continue with transaction sync
+            // Balance RPC failed; preserve existing amount
         }
+    }
 
+    override suspend fun syncTransactions(accountId: String, syncMode: SyncMode) {
         val address = getAddress(accountId)
         val transactions = fetchTransactions(address, accountId, syncMode)
         transactionRepository.upsertAll(transactions)

@@ -183,7 +183,7 @@ class EthProviderSyncTest {
             createClient = createMockClientFactory(transactionsResponse = response)
         )
 
-        providerWithMock.sync(ACCOUNT_ID)
+        providerWithMock.syncTransactions(ACCOUNT_ID)
 
         val transactions = fakeTransactionRepo.getTransactionsByAccount(ACCOUNT_ID, 100, 0)
         assertEquals(2, transactions.size, "Should parse and persist 2 ETH transactions")
@@ -202,7 +202,7 @@ class EthProviderSyncTest {
             createClient = createMockClientFactory(transactionsResponse = response)
         )
 
-        providerWithMock.sync(ACCOUNT_ID)
+        providerWithMock.syncTransactions(ACCOUNT_ID)
 
         val transactions = fakeTransactionRepo.getTransactionsByAccount(ACCOUNT_ID, 100, 0)
         val outgoingTx = transactions.find {
@@ -226,7 +226,7 @@ class EthProviderSyncTest {
             createClient = createMockClientFactory(transactionsResponse = response)
         )
 
-        providerWithMock.sync(ACCOUNT_ID)
+        providerWithMock.syncTransactions(ACCOUNT_ID)
 
         val transactions = fakeTransactionRepo.getTransactionsByAccount(ACCOUNT_ID, 100, 0)
         val incomingTx = transactions.find {
@@ -250,7 +250,7 @@ class EthProviderSyncTest {
             createClient = createMockClientFactory(transactionsResponse = response)
         )
 
-        providerWithMock.sync(ACCOUNT_ID)
+        providerWithMock.syncTransactions(ACCOUNT_ID)
 
         val transactions = fakeTransactionRepo.getTransactionsByAccount(ACCOUNT_ID, 100, 0)
         val tx = transactions.first()
@@ -272,7 +272,7 @@ class EthProviderSyncTest {
             createClient = createMockClientFactory(transactionsResponse = response)
         )
 
-        providerWithMock.sync(ACCOUNT_ID)
+        providerWithMock.syncTransactions(ACCOUNT_ID)
 
         val transactions = fakeTransactionRepo.getTransactionsByAccount(ACCOUNT_ID, 100, 0)
         val tx = transactions.find {
@@ -323,7 +323,7 @@ class EthProviderSyncTest {
             fakeTransactionRepo
         )
 
-        provider.sync(ACCOUNT_ID, SyncMode.NORMAL)
+        provider.syncTransactions(ACCOUNT_ID, SyncMode.NORMAL)
 
         assertTrue(capturedUrl.contains("startblock=18999"),
             "URL should contain startblock from params lastSyncBlock")
@@ -371,7 +371,7 @@ class EthProviderSyncTest {
             fakeTransactionRepo
         )
 
-        provider.sync(ACCOUNT_ID)
+        provider.syncTransactions(ACCOUNT_ID)
 
         assertNotNull(updatedParams, "Params should be updated after fetch")
         assertTrue(updatedParams!!.contains("lastSyncBlock"),
@@ -388,7 +388,7 @@ class EthProviderSyncTest {
             createClient = createMockClientFactory(transactionsResponse = EMPTY_RESULT_RESPONSE)
         )
 
-        providerWithMock.sync(ACCOUNT_ID)
+        providerWithMock.syncTransactions(ACCOUNT_ID)
 
         val transactions = fakeTransactionRepo.getTransactionsByAccount(ACCOUNT_ID, 100, 0)
         assertEquals(0, transactions.size,
@@ -408,7 +408,7 @@ class EthProviderSyncTest {
             createClient = createMockClientFactory(transactionsResponse = response)
         )
 
-        providerWithMock.sync(ACCOUNT_ID)
+        providerWithMock.syncTransactions(ACCOUNT_ID)
 
         val transactions = fakeTransactionRepo.getTransactionsByAccount(ACCOUNT_ID, 100, 0)
         val failedTx = transactions.find {

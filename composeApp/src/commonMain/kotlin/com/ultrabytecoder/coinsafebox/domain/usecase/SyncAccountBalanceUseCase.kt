@@ -11,7 +11,11 @@ import com.ultrabytecoder.coinsafebox.providers.ProviderFactory
 import com.ultrabytecoder.coinsafebox.providers.SyncMode
 import kotlinx.coroutines.CancellationException
 
-class SyncAccountUseCase(
+/**
+ * Single-account balance sync (suspending). Used by the Send flow to refresh the
+ * sender's balance after a transaction. Does NOT touch the transactions table.
+ */
+class SyncAccountBalanceUseCase(
     private val accountRepository: AccountRepository,
     private val utxoRepository: UtxoRepository,
     private val transactionRepository: TransactionRepository,
@@ -21,8 +25,8 @@ class SyncAccountUseCase(
     private val walletRepository: WalletRepository
 ) {
     suspend operator fun invoke(accountId: String, syncMode: SyncMode = SyncMode.NORMAL) {
-        if (!syncManager.tryAcquire(accountId)) {
-            println("Sync already in progress for $accountId, skipping")
+        if (!syncManager.tryAcquireBalance(accountId)) {
+            println("Balance sync already in progress for $accountId, skipping")
             return
         }
         try {
@@ -36,23 +40,23 @@ class SyncAccountUseCase(
                     account.type, xpub, utxoRepository, accountRepository,
                     transactionRepository, networkConfig, account.params
                 )
-                provider.sync(accountId, syncMode)
+                provider.syncBalance(accountId, syncMode)
             } else {
                 keyProvider.withMasterSeed(account.walletId) { masterSeed ->
                     val provider = ProviderFactory.create(
                         account.type, masterSeed, utxoRepository, accountRepository,
                         transactionRepository, networkConfig, account.params
                     )
-                    provider.sync(accountId, syncMode)
+                    provider.syncBalance(accountId, syncMode)
                 }
             }
         } catch (e: CancellationException) {
             // Propagate cancellation — never treat a cancelled sync as a failed one.
             throw e
         } catch (e: Exception) {
-            println("Sync failed for account $accountId: ${e.message}")
+            println("Balance sync failed for account $accountId: ${e.message}")
         } finally {
-            syncManager.release(accountId)
+            syncManager.releaseBalance(accountId)
         }
     }
 }

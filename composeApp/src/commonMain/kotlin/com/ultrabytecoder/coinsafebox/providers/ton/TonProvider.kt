@@ -65,10 +65,12 @@ class TonProvider(
         return tonAddressFromPublicKey(keyPair.publicKey, version)
     }
 
-    override suspend fun sync(accountId: String, syncMode: SyncMode) {
+    override suspend fun syncBalance(accountId: String, syncMode: SyncMode) {
         val rawBalance = balance(accountId)
         accountRepository.updateAmount(accountId, rawBalance.toPlainString())
+    }
 
+    override suspend fun syncTransactions(accountId: String, syncMode: SyncMode) {
         val address = getAddress(accountId)
         val transactions = fetchTransactions(address, accountId, syncMode)
         transactionRepository.upsertAll(transactions)

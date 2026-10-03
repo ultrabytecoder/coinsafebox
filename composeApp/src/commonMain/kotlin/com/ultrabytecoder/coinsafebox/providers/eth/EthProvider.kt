@@ -50,11 +50,13 @@ class EthProvider(
         return ethAddressFromPublicKey(key)
     }
 
-    override suspend fun sync(accountId: String, syncMode: SyncMode) {
+    override suspend fun syncBalance(accountId: String, syncMode: SyncMode) {
         val rawBalance = balance(accountId)
         val normalized = rawBalance.divide(BigDecimal.fromLong(1_000_000_000_000_000_000)).toPlainString()
         accountRepository.updateAmount(accountId, normalized)
+    }
 
+    override suspend fun syncTransactions(accountId: String, syncMode: SyncMode) {
         val address = getAddress(accountId)
         val transactions = fetchTransactions(address, accountId, syncMode)
         transactionRepository.upsertAll(transactions)

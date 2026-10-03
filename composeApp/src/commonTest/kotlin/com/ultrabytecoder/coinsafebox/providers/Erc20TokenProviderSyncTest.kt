@@ -165,7 +165,7 @@ class Erc20TokenProviderSyncTest {
             createClient = createMockClientFactory(transactionsResponse = response)
         )
 
-        providerWithMock.sync(ACCOUNT_ID)
+        providerWithMock.syncTransactions(ACCOUNT_ID)
 
         val transactions = fakeTransactionRepo.getTransactionsByAccount(ACCOUNT_ID, 100, 0)
         assertEquals(2, transactions.size, "Should parse and persist 2 ERC20 transfers")
@@ -184,7 +184,7 @@ class Erc20TokenProviderSyncTest {
             createClient = createMockClientFactory(transactionsResponse = response)
         )
 
-        providerWithMock.sync(ACCOUNT_ID)
+        providerWithMock.syncTransactions(ACCOUNT_ID)
 
         val transactions = fakeTransactionRepo.getTransactionsByAccount(ACCOUNT_ID, 100, 0)
         val outgoingTx = transactions.find {
@@ -208,7 +208,7 @@ class Erc20TokenProviderSyncTest {
             createClient = createMockClientFactory(transactionsResponse = response)
         )
 
-        providerWithMock.sync(ACCOUNT_ID)
+        providerWithMock.syncTransactions(ACCOUNT_ID)
 
         val transactions = fakeTransactionRepo.getTransactionsByAccount(ACCOUNT_ID, 100, 0)
         val incomingTx = transactions.find {
@@ -232,7 +232,7 @@ class Erc20TokenProviderSyncTest {
             createClient = createMockClientFactory(transactionsResponse = response)
         )
 
-        providerWithMock.sync(ACCOUNT_ID)
+        providerWithMock.syncTransactions(ACCOUNT_ID)
 
         val transactions = fakeTransactionRepo.getTransactionsByAccount(ACCOUNT_ID, 100, 0)
         val tx = transactions.first()
@@ -254,7 +254,7 @@ class Erc20TokenProviderSyncTest {
             createClient = createMockClientFactory(transactionsResponse = response)
         )
 
-        providerWithMock.sync(ACCOUNT_ID)
+        providerWithMock.syncTransactions(ACCOUNT_ID)
 
         val transactions = fakeTransactionRepo.getTransactionsByAccount(ACCOUNT_ID, 100, 0)
         val outgoingTx = transactions.find {
@@ -279,7 +279,7 @@ class Erc20TokenProviderSyncTest {
             createClient = createMockClientFactory(transactionsResponse = response)
         )
 
-        providerWithMock.sync(ACCOUNT_ID)
+        providerWithMock.syncTransactions(ACCOUNT_ID)
 
         val transactions = fakeTransactionRepo.getTransactionsByAccount(ACCOUNT_ID, 100, 0)
         val tx = transactions.first()
@@ -331,7 +331,7 @@ class Erc20TokenProviderSyncTest {
             fakeTransactionRepo
         )
 
-        provider.sync(ACCOUNT_ID)
+        provider.syncTransactions(ACCOUNT_ID)
 
         assertTrue(capturedUrl.contains("contractaddress="),
             "Etherscan URL should contain contractaddress parameter")
@@ -352,7 +352,7 @@ class Erc20TokenProviderSyncTest {
             createClient = createMockClientFactory(transactionsResponse = response)
         )
 
-        providerWithMock.sync(ACCOUNT_ID)
+        providerWithMock.syncTransactions(ACCOUNT_ID)
 
         val transactions = fakeTransactionRepo.getTransactionsByAccount(ACCOUNT_ID, 100, 0)
         val tx = transactions.find {
@@ -404,7 +404,7 @@ class Erc20TokenProviderSyncTest {
             fakeTransactionRepo
         )
 
-        provider.sync(ACCOUNT_ID, SyncMode.NORMAL)
+        provider.syncTransactions(ACCOUNT_ID, SyncMode.NORMAL)
 
         assertTrue(capturedUrl.contains("startblock=18999"),
             "URL should contain startblock from params lastSyncBlock")
@@ -418,7 +418,7 @@ class Erc20TokenProviderSyncTest {
             createClient = createMockClientFactory(transactionsResponse = EMPTY_RESULT_RESPONSE)
         )
 
-        providerWithMock.sync(ACCOUNT_ID)
+        providerWithMock.syncTransactions(ACCOUNT_ID)
 
         val transactions = fakeTransactionRepo.getTransactionsByAccount(ACCOUNT_ID, 100, 0)
         assertEquals(0, transactions.size,

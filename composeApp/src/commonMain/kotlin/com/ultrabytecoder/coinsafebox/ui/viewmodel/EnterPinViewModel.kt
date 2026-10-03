@@ -13,7 +13,7 @@ import com.ultrabytecoder.coinsafebox.domain.usecase.CheckPinStatusUseCase
 import com.ultrabytecoder.coinsafebox.domain.usecase.GetSecurityMethodUseCase
 import com.ultrabytecoder.coinsafebox.domain.usecase.GetWalletsUseCase
 import com.ultrabytecoder.coinsafebox.domain.usecase.ReconcileAddressesUseCase
-import com.ultrabytecoder.coinsafebox.domain.usecase.SyncUseCase
+import com.ultrabytecoder.coinsafebox.domain.usecase.SyncBalanceUseCase
 import com.ultrabytecoder.coinsafebox.domain.usecase.VerifyPinUseCase
 import com.ultrabytecoder.coinsafebox.providers.SyncMode
 import com.ultrabytecoder.coinsafebox.security.wipe
@@ -46,7 +46,7 @@ sealed class EnterPinEvent {
 class EnterPinViewModel(
     private val verifyPinUseCase: VerifyPinUseCase,
     private val getWalletsUseCase: GetWalletsUseCase,
-    private val syncUseCase: SyncUseCase,
+    private val syncBalanceUseCase: SyncBalanceUseCase,
     checkPinStatus: CheckPinStatusUseCase,
     getSecurityMethod: GetSecurityMethodUseCase,
     settingsStorage: SettingsStorage,
@@ -151,7 +151,7 @@ class EnterPinViewModel(
             // Reconnect the WalletConnect relay (dropped on lock) on its own
             // app-lifetime scope so it survives this screen being disposed.
             wcController.start()
-            syncUseCase(viewModelScope, walletId, SyncMode.FULL)
+            syncBalanceUseCase(viewModelScope, walletId, SyncMode.FULL)
             _events.emit(EnterPinEvent.NavigateToAccountsList(walletId))
         } else {
             _events.emit(EnterPinEvent.NavigateToCreateWallet)

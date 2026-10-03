@@ -220,6 +220,7 @@ fun AccountDetailsScreen(
                 TransactionListSection(
                     transactions = transactions,
                     accountType = acc.type,
+                    isSyncing = uiState.isSyncingTransactions,
                     isLoadingMore = isLoadingMore,
                     hasMore = hasMore,
                     onLoadMore = { viewModel.loadNextPage() },
@@ -469,6 +470,7 @@ private fun AddressSection(address: String) {
 private fun TransactionListSection(
     transactions: List<TransactionInfo>,
     accountType: AccountType,
+    isSyncing: Boolean,
     isLoadingMore: Boolean,
     hasMore: Boolean,
     onLoadMore: () -> Unit,
@@ -492,7 +494,16 @@ private fun TransactionListSection(
         }
     }
 
-    if (transactions.isEmpty() && !isLoadingMore) {
+    if (isSyncing && transactions.isEmpty()) {
+        // First open with no cached txs: full-area spinner until the sync delivers the
+        // first page (or confirms the account has no activity).
+        Box(
+            modifier = Modifier.then(modifier).fillMaxWidth(),
+            contentAlignment = Alignment.Center
+        ) {
+            CircularProgressIndicator(modifier = Modifier.size(28.dp))
+        }
+    } else if (transactions.isEmpty()) {
         Box(
             modifier = Modifier.then(modifier).fillMaxWidth(),
             contentAlignment = Alignment.Center
@@ -509,6 +520,30 @@ private fun TransactionListSection(
             modifier = modifier.fillMaxWidth(),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
+            // Inline "refreshing" indicator: the cached list stays visible while a
+            // background sync is in flight.
+            if (isSyncing) {
+                item(key = "syncing-indicator") {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(16.dp),
+                            strokeWidth = 2.dp
+                        )
+                        Text(
+                            text = "Refreshing…",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
+
             items(
                 items = transactions,
                 key = { it.id }

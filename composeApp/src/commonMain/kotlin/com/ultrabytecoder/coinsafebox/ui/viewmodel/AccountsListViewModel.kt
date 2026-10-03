@@ -12,7 +12,7 @@ import com.ultrabytecoder.coinsafebox.domain.provider.FiatQuoteProvider
 import com.ultrabytecoder.coinsafebox.domain.usecase.GetAccountsUseCase
 import com.ultrabytecoder.coinsafebox.domain.usecase.GetWalletsUseCase
 import com.ultrabytecoder.coinsafebox.domain.usecase.SyncManager
-import com.ultrabytecoder.coinsafebox.domain.usecase.SyncUseCase
+import com.ultrabytecoder.coinsafebox.domain.usecase.SyncBalanceUseCase
 import com.ultrabytecoder.coinsafebox.providers.SyncMode
 import com.ultrabytecoder.coinsafebox.ui.util.formatFiat
 import kotlinx.coroutines.flow.*
@@ -23,7 +23,7 @@ class AccountsListViewModel(
     initialWalletId: Long,
     private val getAccounts: GetAccountsUseCase,
     getWallets: GetWalletsUseCase,
-    private val syncUseCase: SyncUseCase,
+    private val syncBalanceUseCase: SyncBalanceUseCase,
     syncManager: SyncManager,
     settingsStorage: SettingsStorage,
     private val quoteProvider: FiatQuoteProvider
@@ -35,7 +35,7 @@ class AccountsListViewModel(
     private val _selectedWalletId = MutableStateFlow(initialWalletId)
     val selectedWalletId: StateFlow<Long> = _selectedWalletId.asStateFlow()
 
-    val syncingAccounts: StateFlow<Set<String>> = syncManager.syncingAccounts
+    val syncingAccounts: StateFlow<Set<String>> = syncManager.syncingBalanceAccounts
 
     val fiatCurrency: StateFlow<FiatCurrency> = MutableStateFlow(
         FiatCurrency.fromStored(settingsStorage.getString(SettingsKeys.FIAT_CURRENCY))
@@ -79,7 +79,7 @@ class AccountsListViewModel(
     init {
         viewModelScope.launch {
             _selectedWalletId.collect { walletId ->
-                syncUseCase(viewModelScope, walletId, _syncMode.value)
+                syncBalanceUseCase(viewModelScope, walletId, _syncMode.value)
                 _syncMode.value = SyncMode.NORMAL
             }
         }
