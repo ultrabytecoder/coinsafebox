@@ -16,7 +16,7 @@ class SettingsWcKeyChain(
 ) : WcKeyChain {
 
     private val cache = mutableMapOf<String, String>()
-    private val lock = Any()
+    private val lock = WcLock()
 
     private fun storageKey(tag: String): String = "$keyPrefix$tag"
 

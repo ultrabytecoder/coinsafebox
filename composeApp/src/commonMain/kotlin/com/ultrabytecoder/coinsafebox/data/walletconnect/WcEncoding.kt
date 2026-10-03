@@ -11,15 +11,23 @@ object WcEncoding {
             out[i * 2] = HEX_CHARS[v ushr 4]
             out[i * 2 + 1] = HEX_CHARS[v and 0x0F]
         }
-        return String(out)
+        return out.concatToString()
+    }
+
+    // Cross-platform replacement for the JVM-only `Character.digit(c, 16)`.
+    private fun hexDigit(c: Char): Int = when (c) {
+        in '0'..'9' -> c - '0'
+        in 'a'..'f' -> c - 'a' + 10
+        in 'A'..'F' -> c - 'A' + 10
+        else -> -1
     }
 
     fun hexDecode(str: String): ByteArray {
         val clean = if (str.startsWith("0x") || str.startsWith("0X")) str.substring(2) else str
         require(clean.length % 2 == 0) { "Invalid hex string length: ${clean.length}" }
         return ByteArray(clean.length / 2) { i ->
-            val hi = Character.digit(clean[i * 2], 16)
-            val lo = Character.digit(clean[i * 2 + 1], 16)
+            val hi = hexDigit(clean[i * 2])
+            val lo = hexDigit(clean[i * 2 + 1])
             require(hi >= 0 && lo >= 0) { "Invalid hex character at index ${i * 2}" }
             ((hi shl 4) or lo).toByte()
         }
@@ -128,8 +136,8 @@ object WcEncoding {
             val c = s[i]
             when {
                 c == '%' -> {
-                    val hi = Character.digit(s[i + 1], 16)
-                    val lo = Character.digit(s[i + 2], 16)
+                    val hi = hexDigit(s[i + 1])
+                    val lo = hexDigit(s[i + 2])
                     if (hi >= 0 && lo >= 0) {
                         bytes.add(((hi shl 4) or lo).toByte())
                         i += 3
@@ -163,7 +171,7 @@ object WcEncoding {
         }
         while (outputStart < encoded.size && encoded[outputStart] == B58_CHARS[0]) outputStart++
         for (i in 0 until zeros) encoded[--outputStart] = B58_CHARS[0]
-        return String(encoded, outputStart, encoded.size - outputStart)
+        return encoded.concatToString(outputStart, encoded.size)
     }
 
     private fun divmod(number: ByteArray, firstDigit: Int, base: Int, divisor: Int): Int {

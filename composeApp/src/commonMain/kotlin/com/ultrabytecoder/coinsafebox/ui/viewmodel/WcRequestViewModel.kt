@@ -2,6 +2,10 @@ package com.ultrabytecoder.coinsafebox.ui.viewmodel
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.ionspin.kotlin.bignum.decimal.BigDecimal
+import com.ionspin.kotlin.bignum.decimal.DecimalMode
+import com.ionspin.kotlin.bignum.decimal.RoundingMode
+import com.ionspin.kotlin.bignum.integer.BigInteger
 import com.ultrabytecoder.coinsafebox.data.walletconnect.WcController
 import com.ultrabytecoder.coinsafebox.data.walletconnect.WcEthSigner
 import com.ultrabytecoder.coinsafebox.data.walletconnect.WcPendingRequest
@@ -69,10 +73,16 @@ class WcRequestViewModel(
         val toAddress = to ?: ""
         val valueHex = params["value"]?.jsonPrimitive?.content ?: "0x0"
         val valueEth = try {
-            val valueWei = java.math.BigInteger(valueHex.removePrefix("0x"), 16)
-            java.math.BigDecimal(valueWei)
-                .divide(java.math.BigDecimal.TEN.pow(18), 6, java.math.RoundingMode.HALF_UP)
-                .stripTrailingZeros().toPlainString()
+            val valueWei = BigInteger.parseString(valueHex.removePrefix("0x"), 16)
+            BigDecimal.fromBigInteger(valueWei)
+                .divide(
+                    BigDecimal.fromLong(10).pow(18),
+                    decimalMode = DecimalMode(
+                        decimalPrecision = 80L,
+                        roundingMode = RoundingMode.ROUND_HALF_AWAY_FROM_ZERO,
+                    ),
+                )
+                .toPlainString()
         } catch (_: Exception) { "0" }
 
         val gas = (params["gas"] ?: params["gasLimit"])?.jsonPrimitive?.content
@@ -80,10 +90,10 @@ class WcRequestViewModel(
         val gasPrice = when {
             params.containsKey("maxFeePerGas") ->
                 (params["maxFeePerGas"]?.jsonPrimitive?.content ?: "0x0")
-                    .removePrefix("0x").toLongOrNull(16)?.let { String.format("%.3f Gwei", it / 1e9) } ?: ""
+                    .removePrefix("0x").toLongOrNull(16)?.let { formatGwei(it) } ?: ""
             params.containsKey("gasPrice") ->
                 (params["gasPrice"]?.jsonPrimitive?.content ?: "0x0")
-                    .removePrefix("0x").toLongOrNull(16)?.let { String.format("%.3f Gwei", it / 1e9) } ?: ""
+                    .removePrefix("0x").toLongOrNull(16)?.let { formatGwei(it) } ?: ""
             else -> ""
         }
         val nonceHex = params["nonce"]?.jsonPrimitive?.content
@@ -137,6 +147,23 @@ class WcRequestViewModel(
                 approveDisabledReason = approveDisabledReason,
             )
         }
+    }
+
+    // Cross-platform replacement for `String.format("%.3f Gwei", wei / 1e9)`.
+    // The int/frac are split so no intermediate multiplies past Long.MAX
+    // (`wei * 1000` would overflow for gas prices above ~9.2e15 wei).
+    private fun formatGwei(wei: Long): String {
+        if (wei < 0) return "0.000 Gwei"
+        val intGwei = wei / 1_000_000_000L
+        val remainderWei = wei % 1_000_000_000L
+        val milliFrac = (remainderWei * 1000L + 500_000_000L) / 1_000_000_000L // 0..1000
+        var intPart = intGwei
+        var fracPart = milliFrac
+        if (fracPart == 1000L) {
+            intPart++
+            fracPart = 0
+        }
+        return "$intPart.${fracPart.toString().padStart(3, '0')} Gwei"
     }
 
     fun approve() {

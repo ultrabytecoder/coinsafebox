@@ -28,6 +28,7 @@ import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
+import kotlin.concurrent.Volatile
 import kotlin.time.Clock
 
 internal interface WcRelayTransport {
@@ -102,17 +103,21 @@ internal class WcRelayClient(
 
     private val json = Json { ignoreUnknownKeys = true }
 
-    private val stateLock = Any()
+    // These three locks guard disjoint in-memory state. No code path ever holds more than
+    // one of them at a time (each critical section is a short, self-contained get/set/remove
+    // that does not re-enter any other lock-taking method), so there is no lock-ordering
+    // requirement and no nesting — safe even with a non-reentrant lock.
+    private val stateLock = WcLock()
     private val pending = mutableMapOf<String, CompletableDeferred<JsonElement>>()
     private var idCounter = 0L
 
-    private val subscriptionsLock = Any()
+    private val subscriptionsLock = WcLock()
     private val subscriptions = mutableMapOf<String, String>()
     // Topics the client must keep subscribed across (re)connects. The relay client is the
     // sole owner of (re)subscription; callers add topics via subscribe() or track().
     private val trackedTopics = mutableSetOf<String>()
 
-    private val dedupeLock = Any()
+    private val dedupeLock = WcLock()
     private val seenMessages = LinkedHashSet<String>()
 
     @Volatile
@@ -310,8 +315,8 @@ internal class WcRelayClient(
             "projectId" to projectId,
             "ua" to userAgent,
             "useOnCloseEvent" to "true",
-        ).toSortedMap()
-        val query = params.entries.joinToString("&") { (k, v) ->
+        )
+        val query = params.entries.sortedBy { it.key }.joinToString("&") { (k, v) ->
             "${WcEncoding.urlEncode(k)}=${WcEncoding.urlEncode(v)}"
         }
         return "$relayBaseUrl?$query"

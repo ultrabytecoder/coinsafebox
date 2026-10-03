@@ -20,6 +20,7 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.long
 import kotlinx.serialization.json.put
+import kotlin.concurrent.Volatile
 import kotlin.time.Clock
 
 /**
@@ -44,7 +45,7 @@ internal class WcSessionManager(
     private var scope: CoroutineScope = CoroutineScope(SupervisorJob() + dispatcher)
     private val json = Json { ignoreUnknownKeys = true }
 
-    private val stateLock = Any()
+    private val stateLock = WcLock()
     private val pairings = mutableMapOf<String, WcPairing>()
     private val proposals = mutableMapOf<Long, WcProposal>()
     private val sessions = mutableMapOf<String, WcSession>()
